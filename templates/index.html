@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小宇宙播客下载器</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🪐 小宇宙播客下载器</h1>
+            <nav>
+                <button class="nav-btn active" data-page="single">单集下载</button>
+                <button class="nav-btn" data-page="subscription">订阅管理</button>
+                <button class="nav-btn" data-page="tasks">任务管理</button>
+                <button class="nav-btn" data-page="downloads">下载管理</button>
+            </nav>
+        </header>
+
+        <!-- 单集下载页面 -->
+        <div id="single-page" class="page active">
+            <h2>单集节目下载</h2>
+            <div class="form-group">
+                <label for="episode-url">小宇宙单集链接：</label>
+                <input type="text" id="episode-url" placeholder="https://www.xiaoyuzhoufm.com/episode/...">
+                <button onclick="getEpisodeInfo()">获取信息</button>
+            </div>
+            <div id="episode-info" class="episode-info" style="display: none;">
+                <div class="episode-card">
+                    <img id="episode-cover" src="" alt="封面" class="episode-cover">
+                    <div class="episode-details">
+                        <h3 id="episode-title"></h3>
+                        <p id="episode-description"></p>
+                        <div style="margin-top: 15px;">
+                            <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                                <input type="checkbox" id="convert-to-mp3" style="width: auto;">
+                                <span>如果是m4a格式，自动转换为mp3</span>
+                            </label>
+                            <button onclick="downloadEpisode()" class="download-btn">下载音频</button>
+                        </div>
+                        <a id="download-link" href="#" download style="display: none;">直接下载</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 订阅管理页面 -->
+        <div id="subscription-page" class="page">
+            <h2>订阅管理</h2>
+            
+            <!-- 用户创建 -->
+            <div class="section">
+                <h3>创建/选择用户</h3>
+                <div class="form-group">
+                    <input type="text" id="username" placeholder="输入用户名">
+                    <button onclick="createUser()">创建/加载用户</button>
+                    <button onclick="loadUsers()">查看已有用户</button>
+                </div>
+                <div id="users-list"></div>
+                <div id="user-status"></div>
+            </div>
+
+            <!-- OPML上传 -->
+            <div class="section" id="opml-section" style="display: none;">
+                <h3>上传OPML文件</h3>
+                <div class="form-group">
+                    <input type="file" id="opml-file" accept=".opml,.xml">
+                    <button onclick="uploadOPML()">上传OPML</button>
+                </div>
+                <div id="opml-status"></div>
+            </div>
+
+            <!-- 订阅列表 -->
+            <div class="section" id="subscriptions-section" style="display: none;">
+                <h3>订阅列表</h3>
+                <div id="subscriptions-list"></div>
+            </div>
+
+            <!-- 下载选项 -->
+            <div class="section" id="download-options" style="display: none;">
+                <h3>下载选项</h3>
+                <div class="form-group">
+                    <label>下载最新N集：</label>
+                    <input type="number" id="latest-count" value="5" min="1" max="50">
+                    <button onclick="downloadLatest()">开始下载</button>
+                </div>
+                <div class="form-group">
+                    <button onclick="startMonitor()" class="monitor-btn">启动监听任务</button>
+                    <p class="help-text">监听任务会自动检测新节目并下载</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 任务管理页面 -->
+        <div id="tasks-page" class="page">
+            <h2>任务管理</h2>
+            <div id="tasks-list"></div>
+        </div>
+
+        <!-- 下载管理页面 -->
+        <div id="downloads-page" class="page">
+            <h2>下载管理</h2>
+            <div id="downloads-list"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+
