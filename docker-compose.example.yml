@@ -21,6 +21,10 @@ services:
       - ./logs:/app/logs
     environment:
       - FLASK_ENV=production
+      # 如果使用反向代理，设置应用根路径（例如: /podcast）
+      - APPLICATION_ROOT=/podcast
+      # 如果使用反向代理，启用ProxyFix
+      - PROXY_FIX=1
       - LOG_DIR=/app/logs
     restart: unless-stopped
 

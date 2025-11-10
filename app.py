@@ -39,6 +39,8 @@ if application_root:
     application_root = '/' + application_root.strip('/')
     app.config['APPLICATION_ROOT'] = application_root
     logger.info(f"设置应用根路径: {application_root}")
+else:
+    application_root = ''
 
 # 配置ProxyFix以正确处理反向代理
 # 如果使用反向代理，设置环境变量 PROXY_FIX=1
@@ -52,6 +54,31 @@ if os.getenv('PROXY_FIX', '').lower() in ('1', 'true', 'yes'):
         x_prefix=1
     )
     logger.info("已启用ProxyFix中间件")
+
+# 添加模板上下文处理器，确保url_for正确处理路径前缀
+@app.context_processor
+def inject_application_root():
+    """注入应用根路径到所有模板"""
+    return {
+        'application_root': application_root,
+        'url_prefix': application_root  # 提供url_prefix别名
+    }
+
+# 修改url_for使其支持路径前缀
+from flask import url_for as flask_url_for
+@app.template_global()
+def url_for(endpoint, **values):
+    """重写url_for以支持路径前缀"""
+    if endpoint == 'static':
+        # 静态文件直接拼接路径
+        filename = values.get('filename', '')
+        return f"{application_root}/static/{filename}"
+    # 其他路由使用Flask原生url_for
+    url = flask_url_for(endpoint, **values)
+    # 如果URL不是以application_root开头，添加前缀
+    if application_root and not url.startswith(application_root):
+        url = application_root + url
+    return url
 
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['DOWNLOAD_FOLDER'] = 'downloads'
@@ -67,7 +94,7 @@ task_manager = TaskManager(download_manager)
 
 @app.route('/')
 def index():
-    return render_template('index.html', application_root=application_root)
+    return render_template('index.html')
 
 @app.route('/api/episode/info', methods=['POST'])
 def get_episode_info_api():
