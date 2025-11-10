@@ -6,6 +6,7 @@ import time
 import requests
 import logging
 from datetime import datetime
+from werkzeug.middleware.proxy_fix import ProxyFix
 from utils.xiaoyuzhou import get_episode_info, get_download_url
 from utils.opml_parser import parse_opml
 from utils.rss_parser import parse_rss_feed, get_episodes_from_rss
@@ -29,6 +30,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# 支持反向代理路径前缀
+# 通过环境变量 APPLICATION_ROOT 或 SCRIPT_NAME 设置，例如: /podcast
+application_root = os.getenv('APPLICATION_ROOT', os.getenv('SCRIPT_NAME', ''))
+if application_root:
+    # 确保以 / 开头，不以 / 结尾
+    application_root = '/' + application_root.strip('/')
+    app.config['APPLICATION_ROOT'] = application_root
+    logger.info(f"设置应用根路径: {application_root}")
+
+# 配置ProxyFix以正确处理反向代理
+# 如果使用反向代理，设置环境变量 PROXY_FIX=1
+if os.getenv('PROXY_FIX', '').lower() in ('1', 'true', 'yes'):
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+        x_port=1,
+        x_prefix=1
+    )
+    logger.info("已启用ProxyFix中间件")
+
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['DOWNLOAD_FOLDER'] = 'downloads'
 app.config['USERS_FOLDER'] = 'users'
@@ -43,7 +67,7 @@ task_manager = TaskManager(download_manager)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', application_root=application_root)
 
 @app.route('/api/episode/info', methods=['POST'])
 def get_episode_info_api():

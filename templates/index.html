@@ -105,6 +105,10 @@
         </div>
     </div>
 
+    <script>
+        // 设置应用根路径，供JavaScript使用
+        window.APPLICATION_ROOT = {{ application_root|tojson }};
+    </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

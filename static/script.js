@@ -1,5 +1,17 @@
 let currentUsername = '';
 
+// 获取应用根路径（支持反向代理）
+const APPLICATION_ROOT = window.APPLICATION_ROOT || '';
+
+// API请求辅助函数
+function apiUrl(path) {
+    // 确保path以/开头
+    if (!path.startsWith('/')) {
+        path = '/' + path;
+    }
+    return APPLICATION_ROOT + path;
+}
+
 // 页面导航
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -36,7 +48,7 @@ async function getEpisodeInfo() {
     infoDiv.style.display = 'none';
     
     try {
-        const response = await fetch('/api/episode/info', {
+        const response = await fetch(apiUrl('/api/episode/info'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -74,7 +86,7 @@ async function downloadEpisode() {
     
     try {
         // 首先获取下载链接和节目标题
-        const response = await fetch('/api/episode/download-url', {
+        const response = await fetch(apiUrl('/api/episode/download-url'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -95,7 +107,7 @@ async function downloadEpisode() {
             // 检查是否要转换
             const convertToMp3 = document.getElementById('convert-to-mp3').checked;
             
-            const downloadResponse = await fetch('/api/episode/download', {
+            const downloadResponse = await fetch(apiUrl('/api/episode/download'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -177,7 +189,7 @@ async function createUser() {
     }
     
     try {
-        const response = await fetch('/api/user/create', {
+        const response = await fetch(apiUrl('/api/user/create'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -207,7 +219,7 @@ async function createUser() {
 // 加载用户列表
 async function loadUsers() {
     try {
-        const response = await fetch('/api/users');
+        const response = await fetch(apiUrl('/api/users'));
         const data = await response.json();
         
         if (response.ok) {
@@ -256,7 +268,7 @@ async function uploadOPML() {
     formData.append('file', file);
     
     try {
-        const response = await fetch(`/api/user/${currentUsername}/opml`, {
+        const response = await fetch(apiUrl(`/api/user/${currentUsername}/opml`), {
             method: 'POST',
             body: formData
         });
@@ -282,7 +294,7 @@ async function loadSubscriptions() {
     if (!currentUsername) return;
     
     try {
-        const response = await fetch(`/api/user/${currentUsername}/subscriptions`);
+        const response = await fetch(apiUrl(`/api/user/${currentUsername}/subscriptions`));
         const data = await response.json();
         
         if (response.ok) {
@@ -319,7 +331,7 @@ async function loadEpisodes(subIndex) {
     `;
     
     try {
-        const response = await fetch(`/api/user/${currentUsername}/subscriptions/${subIndex}/episodes`);
+        const response = await fetch(apiUrl(`/api/user/${currentUsername}/subscriptions/${subIndex}/episodes`));
         const data = await response.json();
         
         if (response.ok) {
@@ -380,7 +392,7 @@ async function downloadEpisodeFile(audioUrl, title, index) {
             buttons[index].disabled = true;
             
             // 通过服务器下载，设置正确的文件名
-            const response = await fetch('/api/episode/download', {
+            const response = await fetch(apiUrl('/api/episode/download'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -433,7 +445,7 @@ async function downloadLatest() {
     const count = parseInt(document.getElementById('latest-count').value) || 5;
     
     try {
-        const response = await fetch(`/api/user/${currentUsername}/download/latest`, {
+        const response = await fetch(apiUrl(`/api/user/${currentUsername}/download/latest`), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -467,7 +479,7 @@ async function startMonitor() {
     }
     
     try {
-        const response = await fetch(`/api/user/${currentUsername}/monitor/start`, {
+        const response = await fetch(apiUrl(`/api/user/${currentUsername}/monitor/start`), {
             method: 'POST'
         });
         
@@ -488,7 +500,7 @@ async function startMonitor() {
 // 加载任务列表
 async function loadTasks() {
     try {
-        const response = await fetch('/api/tasks');
+        const response = await fetch(apiUrl('/api/tasks'));
         const data = await response.json();
         
         if (response.ok) {
@@ -551,7 +563,7 @@ async function cancelTask(taskId) {
     }
     
     try {
-        const response = await fetch(`/api/tasks/${taskId}/cancel`, {
+        const response = await fetch(apiUrl(`/api/tasks/${taskId}/cancel`), {
             method: 'POST'
         });
         
@@ -570,7 +582,7 @@ async function cancelTask(taskId) {
 // 加载下载列表
 async function loadDownloads() {
     try {
-        const response = await fetch('/api/downloads');
+        const response = await fetch(apiUrl('/api/downloads'));
         const data = await response.json();
         
         if (response.ok) {
@@ -593,7 +605,7 @@ async function loadDownloads() {
                                 </p>
                             </div>
                             <div>
-                                <a href="/downloads/${download.file_id}" download class="download-btn" style="display: inline-block; text-decoration: none; margin-right: 10px;">下载</a>
+                                <a href="${apiUrl('/downloads/' + download.file_id)}" download class="download-btn" style="display: inline-block; text-decoration: none; margin-right: 10px;">下载</a>
                                 ${isM4A ? `<button onclick="convertToMp3('${download.file_id}')" class="monitor-btn" style="margin-right: 10px;">转换为MP3</button>` : ''}
                                 <button onclick="deleteDownload('${download.file_id}')" class="delete-btn">删除</button>
                             </div>
@@ -614,7 +626,7 @@ async function convertToMp3(fileId) {
     }
     
     try {
-        const response = await fetch('/api/audio/convert', {
+        const response = await fetch(apiUrl('/api/audio/convert'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -642,7 +654,7 @@ async function deleteDownload(fileId) {
     }
     
     try {
-        const response = await fetch(`/api/downloads/${fileId}`, {
+        const response = await fetch(apiUrl(`/api/downloads/${fileId}`), {
             method: 'DELETE'
         });
         

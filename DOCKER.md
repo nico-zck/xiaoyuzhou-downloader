@@ -46,6 +46,45 @@ docker run -d -p 5000:5000 \
   your-username/podcast-downloader:latest
 ```
 
+### 反向代理配置（Nginx示例）
+
+如果你使用Nginx作为反向代理，需要配置路径前缀：
+
+```nginx
+location /podcast {
+    proxy_pass http://localhost:5000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Prefix /podcast;
+    
+    # WebSocket支持（如果需要）
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+然后在docker-compose.yml中设置环境变量：
+
+```yaml
+environment:
+  - APPLICATION_ROOT=/podcast
+  - PROXY_FIX=1
+```
+
+或者使用Docker命令：
+
+```bash
+docker run -d -p 5000:5000 \
+  -e APPLICATION_ROOT=/podcast \
+  -e PROXY_FIX=1 \
+  -v $(pwd)/downloads:/app/downloads \
+  -v $(pwd)/users:/app/users \
+  your-username/podcast-downloader:latest
+```
+
 ## 本地构建Docker镜像（可选）
 
 ### 方法1：使用Docker命令
