@@ -485,13 +485,38 @@ def delete_download(file_id):
 @app.route('/downloads/<file_id>', methods=['GET'])
 def download_file(file_id):
     """下载文件"""
+    from flask import Response
+    from urllib.parse import quote
+    
     file_info = download_manager.metadata.get(file_id)
     if file_info and os.path.exists(file_info['file_path']):
-        return send_file(
+        # 优先使用节目标题作为文件名
+        episode_info = file_info.get('episode_info', {})
+        if episode_info and episode_info.get('title'):
+            # 从标题生成安全的文件名
+            import re
+            safe_title = re.sub(r'[<>:"/\\|?*]', '_', episode_info['title'])
+            safe_title = safe_title.strip()[:100]  # 限制长度
+            # 保持原文件扩展名
+            ext = os.path.splitext(file_info['filename'])[1]
+            filename = f"{safe_title}{ext}"
+        else:
+            filename = file_info['filename']
+        
+        # 使用RFC 5987格式支持中文文件名
+        encoded_filename = quote(filename.encode('utf-8'))
+        ascii_filename = filename.encode('ascii', 'ignore').decode('ascii') or 'download'
+        
+        response = send_file(
             file_info['file_path'],
             as_attachment=True,
-            download_name=file_info['filename']
+            download_name=filename
         )
+        
+        # 添加正确的Content-Disposition头支持中文
+        response.headers['Content-Disposition'] = f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        
+        return response
     else:
         return jsonify({'error': '文件不存在'}), 404
 
@@ -555,97 +580,132 @@ def convert_audio():
 @app.route('/api/downloads/batch/delete', methods=['POST'])
 def batch_delete_downloads():
     """批量删除下载文件"""
-    data = request.json
-    file_ids = data.get('file_ids', [])
-    
-    if not file_ids:
-        return jsonify({'error': '请提供要删除的文件ID列表'}), 400
-    
-    success_count, failed_ids = download_manager.delete_files_batch(file_ids)
-    
-    return jsonify({
-        'message': f'成功删除{success_count}个文件',
-        'success_count': success_count,
-        'failed_count': len(failed_ids),
-        'failed_ids': failed_ids
-    })
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+            
+        file_ids = data.get('file_ids', [])
+        
+        if not file_ids:
+            return jsonify({'error': '请提供要删除的文件ID列表'}), 400
+        
+        success_count, failed_ids = download_manager.delete_files_batch(file_ids)
+        
+        return jsonify({
+            'message': f'成功删除{success_count}个文件',
+            'success_count': success_count,
+            'failed_count': len(failed_ids),
+            'failed_ids': failed_ids
+        })
+    except Exception as e:
+        logger.error(f"批量删除文件失败: {str(e)}")
+        return jsonify({'error': f'批量删除失败: {str(e)}'}), 500
 
 @app.route('/api/audio/batch/convert', methods=['POST'])
 def batch_convert_audio():
     """批量转换音频格式（m4a转mp3）"""
-    data = request.json
-    file_ids = data.get('file_ids', [])
-    
-    if not file_ids:
-        return jsonify({'error': '请提供要转换的文件ID列表'}), 400
-    
-    if not check_ffmpeg():
-        return jsonify({'error': 'ffmpeg未安装，无法转换格式'}), 400
-    
-    results = []
-    success_count = 0
-    
-    for file_id in file_ids:
-        file_info = download_manager.metadata.get(file_id)
-        if not file_info or not os.path.exists(file_info['file_path']):
-            results.append({
-                'file_id': file_id,
-                'success': False,
-                'error': '文件不存在'
-            })
-            continue
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
+            
+        file_ids = data.get('file_ids', [])
         
-        file_path = file_info['file_path']
-        audio_format = get_audio_format(file_path)
+        if not file_ids:
+            return jsonify({'error': '请提供要转换的文件ID列表'}), 400
         
-        if audio_format != 'm4a':
-            results.append({
-                'file_id': file_id,
-                'success': False,
-                'error': f'文件格式为{audio_format}，只能转换m4a格式'
-            })
-            continue
+        if not check_ffmpeg():
+            return jsonify({'error': 'ffmpeg未安装，无法转换格式'}), 400
         
-        # 生成输出路径
-        base_name = os.path.splitext(file_path)[0]
-        output_path = f"{base_name}.mp3"
+        results = []
+        success_count = 0
         
-        # 执行转换
-        logger.info(f"批量转换 - 文件ID: {file_id}, 输入: {file_path}, 输出: {output_path}")
-        success, converted_path, error = convert_m4a_to_mp3(file_path, output_path)
+        for file_id in file_ids:
+            try:
+                file_info = download_manager.metadata.get(file_id)
+                if not file_info or not os.path.exists(file_info['file_path']):
+                    results.append({
+                        'file_id': file_id,
+                        'success': False,
+                        'error': '文件不存在'
+                    })
+                    continue
+                
+                file_path = file_info['file_path']
+                audio_format = get_audio_format(file_path)
+                
+                # 如果已经是MP3，直接标记为成功，不需要转换
+                if audio_format == 'mp3':
+                    results.append({
+                        'file_id': file_id,
+                        'new_file_id': file_id,
+                        'success': True,
+                        'filename': file_info['filename'],
+                        'already_mp3': True
+                    })
+                    success_count += 1
+                    continue
+                
+                # 如果不是m4a也不是mp3，报错
+                if audio_format != 'm4a':
+                    results.append({
+                        'file_id': file_id,
+                        'success': False,
+                        'error': f'文件格式为{audio_format}，只能处理mp3和m4a格式'
+                    })
+                    continue
+                
+                # 生成输出路径
+                base_name = os.path.splitext(file_path)[0]
+                output_path = f"{base_name}.mp3"
+                
+                # 执行转换
+                logger.info(f"批量转换 - 文件ID: {file_id}, 输入: {file_path}, 输出: {output_path}")
+                success, converted_path, error = convert_m4a_to_mp3(file_path, output_path)
+                
+                if success:
+                    # 更新元数据
+                    new_filename = os.path.basename(converted_path)
+                    new_file_id = download_manager._get_file_id(converted_path)
+                    download_manager.metadata[new_file_id] = {
+                        **file_info,
+                        'filename': new_filename,
+                        'file_path': converted_path,
+                        'size': os.path.getsize(converted_path),
+                        'downloaded_at': datetime.now().isoformat()
+                    }
+                    download_manager._save_metadata()
+                    success_count += 1
+                    results.append({
+                        'file_id': file_id,
+                        'new_file_id': new_file_id,
+                        'success': True,
+                        'filename': new_filename
+                    })
+                else:
+                    results.append({
+                        'file_id': file_id,
+                        'success': False,
+                        'error': error
+                    })
+            except Exception as e:
+                logger.error(f"批量转换单个文件时出错 - 文件ID: {file_id}, 错误: {str(e)}")
+                results.append({
+                    'file_id': file_id,
+                    'success': False,
+                    'error': str(e)
+                })
         
-        if success:
-            # 更新元数据
-            new_filename = os.path.basename(converted_path)
-            new_file_id = download_manager._get_file_id(converted_path)
-            download_manager.metadata[new_file_id] = {
-                **file_info,
-                'filename': new_filename,
-                'file_path': converted_path,
-                'size': os.path.getsize(converted_path),
-                'downloaded_at': datetime.now().isoformat()
-            }
-            download_manager._save_metadata()
-            success_count += 1
-            results.append({
-                'file_id': file_id,
-                'new_file_id': new_file_id,
-                'success': True,
-                'filename': new_filename
-            })
-        else:
-            results.append({
-                'file_id': file_id,
-                'success': False,
-                'error': error
-            })
-    
-    return jsonify({
-        'message': f'成功转换{success_count}个文件',
-        'success_count': success_count,
-        'total_count': len(file_ids),
-        'results': results
-    })
+        return jsonify({
+            'message': f'成功转换{success_count}个文件',
+            'success_count': success_count,
+            'total_count': len(file_ids),
+            'results': results
+        })
+    except Exception as e:
+        logger.error(f"批量转换音频失败: {str(e)}")
+        return jsonify({'error': f'批量转换失败: {str(e)}'}), 500
 
 @app.route('/api/ffmpeg/check', methods=['GET'])
 def check_ffmpeg_api():

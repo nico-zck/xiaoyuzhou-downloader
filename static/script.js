@@ -869,13 +869,14 @@ async function loadDownloads(username = '') {
                             ).join('')}
                         </select>
                         <span style="margin-left: 15px; color: #666;">共 ${data.downloads.length} 个文件</span>
+                        <button onclick="selectAll()" class="select-all-btn">全选</button>
                     </div>
                     <div class="batch-actions" style="display: none;">
                         <span id="selected-count">已选择 0 项</span>
-                        <button onclick="batchDownload()" class="download-btn" style="padding: 8px 16px; font-size: 14px;">批量下载</button>
-                        <button onclick="batchConvert()" class="monitor-btn" style="padding: 8px 16px; font-size: 14px;">批量转MP3</button>
-                        <button onclick="batchDelete()" class="delete-btn" style="padding: 8px 16px; font-size: 14px;">批量删除</button>
-                        <button onclick="clearSelection()" style="padding: 8px 16px; font-size: 14px;">取消选择</button>
+                        <button onclick="batchDownload()" class="batch-btn download-btn">批量下载</button>
+                        <button onclick="batchConvert()" class="batch-btn monitor-btn">转MP3下载</button>
+                        <button onclick="batchDelete()" class="batch-btn delete-btn">批量删除</button>
+                        <button onclick="clearSelection()" class="batch-btn">取消选择</button>
                     </div>
                 </div>
             `;
@@ -1007,6 +1008,21 @@ function updateBatchToolbar() {
     }
 }
 
+// 全选
+function selectAll() {
+    const checkboxes = document.querySelectorAll('.download-item-checkbox input[type="checkbox"]');
+    checkboxes.forEach(cb => {
+        cb.checked = true;
+        const fileId = cb.id.replace('check-', '');
+        selectedDownloads.add(fileId);
+        const downloadItem = document.querySelector(`[data-file-id="${fileId}"]`);
+        if (downloadItem) {
+            downloadItem.classList.add('selected');
+        }
+    });
+    updateBatchToolbar();
+}
+
 // 清除选择
 function clearSelection() {
     selectedDownloads.clear();
@@ -1042,14 +1058,14 @@ async function batchDownload() {
     alert(`已触发${selectedDownloads.size}个文件的下载`);
 }
 
-// 批量转换
+// 批量转换为MP3并下载
 async function batchConvert() {
     if (selectedDownloads.size === 0) {
-        alert('请先选择要转换的文件');
+        alert('请先选择要处理的文件');
         return;
     }
     
-    if (!confirm(`确定要将选中的${selectedDownloads.size}个文件转换为MP3格式吗？`)) {
+    if (!confirm(`确定要处理选中的${selectedDownloads.size}个文件吗？\n\nMP3文件将直接下载，M4A文件将转换为MP3后自动下载。\n注意：转换可能需要一些时间，请耐心等待。`)) {
         return;
     }
     
@@ -1064,17 +1080,74 @@ async function batchConvert() {
             })
         });
         
+        // 检查响应的Content-Type
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('服务器返回非JSON响应:', text.substring(0, 200));
+            alert('服务器错误：返回了非JSON响应。请查看浏览器控制台获取详细信息。');
+            return;
+        }
+        
         const data = await response.json();
         
         if (response.ok) {
-            alert(data.message + `\n成功: ${data.success_count}/${data.total_count}`);
+            // 显示详细结果
+            let message = data.message + `\n\n总计: ${data.total_count} 个文件\n成功: ${data.success_count} 个\n失败: ${data.total_count - data.success_count} 个`;
+            
+            // 如果有失败的，显示失败原因
+            if (data.results) {
+                const failedResults = data.results.filter(r => !r.success);
+                if (failedResults.length > 0) {
+                    message += '\n\n失败详情：';
+                    failedResults.forEach((r, idx) => {
+                        if (idx < 5) { // 只显示前5个失败项
+                            message += `\n- ${r.error}`;
+                        }
+                    });
+                    if (failedResults.length > 5) {
+                        message += `\n... 还有${failedResults.length - 5}个失败项`;
+                    }
+                }
+            }
+            
+            // 自动触发下载成功的文件
+            if (data.results) {
+                const successResults = data.results.filter(r => r.success);
+                if (successResults.length > 0) {
+                    message += `\n\n正在自动下载${successResults.length}个MP3文件...`;
+                    alert(message);
+                    
+                    // 直接自动下载，不再询问
+                    for (const result of successResults) {
+                        const fileId = result.new_file_id || result.file_id;
+                        const link = document.createElement('a');
+                        link.href = apiUrl(`/downloads/${fileId}`);
+                        link.download = '';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        // 延迟避免浏览器阻止
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                } else {
+                    // 全部失败才显示alert
+                    alert(message);
+                }
+            } else {
+                alert(message);
+            }
+            
+            // 刷新列表并清除选择
+            await loadDownloads(currentDownloadUser);
             clearSelection();
-            loadDownloads(currentDownloadUser);
         } else {
-            alert('批量转换失败: ' + (data.error || '未知错误'));
+            alert('批量处理失败: ' + (data.error || '未知错误'));
         }
     } catch (error) {
-        alert('请求失败: ' + error.message);
+        console.error('批量处理异常:', error);
+        alert('请求失败: ' + error.message + '\n\n请查看浏览器控制台获取详细错误信息。');
     }
 }
 
@@ -1100,17 +1173,31 @@ async function batchDelete() {
             })
         });
         
+        // 检查响应的Content-Type
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('服务器返回非JSON响应:', text.substring(0, 200));
+            alert('服务器错误：返回了非JSON响应。请查看浏览器控制台获取详细信息。');
+            return;
+        }
+        
         const data = await response.json();
         
         if (response.ok) {
-            alert(data.message);
+            let message = data.message;
+            if (data.failed_count > 0) {
+                message += `\n\n失败: ${data.failed_count} 个文件`;
+            }
+            alert(message);
             clearSelection();
             loadDownloads(currentDownloadUser);
         } else {
             alert('批量删除失败: ' + (data.error || '未知错误'));
         }
     } catch (error) {
-        alert('请求失败: ' + error.message);
+        console.error('批量删除异常:', error);
+        alert('请求失败: ' + error.message + '\n\n请查看浏览器控制台获取详细错误信息。');
     }
 }
 

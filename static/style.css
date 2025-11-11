@@ -353,6 +353,7 @@ button:active {
     align-items: center;
     gap: 10px;
     margin-bottom: 15px;
+    flex-wrap: wrap;
 }
 
 .filter-group label {
@@ -375,6 +376,23 @@ button:active {
     border-color: #667eea;
 }
 
+.select-all-btn {
+    padding: 6px 16px;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.select-all-btn:hover {
+    background: #5568d3;
+    transform: translateY(-1px);
+}
+
 .batch-actions {
     display: flex;
     align-items: center;
@@ -387,6 +405,21 @@ button:active {
 .batch-actions span {
     font-weight: 600;
     color: #667eea;
+}
+
+.batch-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.batch-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
 }
 
 .download-item {
@@ -522,6 +555,18 @@ button:active {
     padding: 8px 12px;
     font-size: 13px;
     white-space: nowrap;
+    border-radius: 6px;
+    transition: all 0.3s;
+}
+
+.download-item-actions a {
+    text-decoration: none;
+}
+
+.download-item-actions button:hover,
+.download-item-actions a:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
 }
 
 .delete-btn {
@@ -702,12 +747,17 @@ button:active {
         width: 100%;
     }
     
+    .select-all-btn {
+        width: 100%;
+        padding: 8px 16px;
+    }
+    
     .batch-actions {
         gap: 8px;
         padding-top: 12px;
     }
     
-    .batch-actions button {
+    .batch-btn {
         padding: 6px 12px;
         font-size: 13px;
     }
