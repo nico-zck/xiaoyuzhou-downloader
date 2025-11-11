@@ -12,15 +12,42 @@ function apiUrl(path) {
     return APPLICATION_ROOT + path;
 }
 
-// 页面导航
-document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const page = btn.dataset.page;
-        switchPage(page);
-        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+// 初始化页面导航
+function initNavigation() {
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const page = btn.dataset.page;
+            switchPage(page);
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
     });
-});
+}
+
+// 启动任务刷新定时器
+function startTaskRefreshTimer() {
+    setInterval(() => {
+        const tasksPage = document.getElementById('tasks-page');
+        if (tasksPage && tasksPage.classList.contains('active')) {
+            loadTasks();
+        }
+    }, 5000);
+}
+
+// 统一的初始化函数
+function initApp() {
+    console.log('初始化应用，APPLICATION_ROOT:', APPLICATION_ROOT);
+    initNavigation();
+    startTaskRefreshTimer();
+}
+
+// 等待DOM加载完成后初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+} else {
+    // DOM已经加载完成
+    initApp();
+}
 
 function switchPage(pageName) {
     document.querySelectorAll('.page').forEach(page => {
@@ -520,12 +547,7 @@ async function downloadEpisodeFile(audioUrl, title, index) {
             });
             
             if (response.ok) {
-                // 获取转换选项并更新状态提示
-                const convertCheckbox = document.getElementById(`convert-sub-${index}`);
-                const convertToMp3 = convertCheckbox ? convertCheckbox.checked : false;
-                const statusHintId = `status-hint-${index}`;
-                const statusHint = document.getElementById(statusHintId);
-                
+                // 更新状态提示（使用之前已声明的变量）
                 if (statusHint) {
                     if (convertToMp3) {
                         statusHint.innerHTML = '✅ 格式转换完成，正在下载...';
@@ -623,11 +645,9 @@ async function downloadEpisodeFile(audioUrl, title, index) {
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
                 
-                // 显示完成状态
+                // 显示完成状态（使用之前已声明的变量）
                 const progressText = document.getElementById(`progress-text-${index}`);
                 const progressFill = document.getElementById(`progress-fill-${index}`);
-                const statusHintId = `status-hint-${index}`;
-                const statusHint = document.getElementById(statusHintId);
                 
                 if (progressText && progressFill) {
                     progressText.textContent = '下载完成！';
@@ -653,9 +673,7 @@ async function downloadEpisodeFile(audioUrl, title, index) {
                 const data = await response.json();
                 alert('下载失败: ' + (data.error || '未知错误'));
                 
-                // 清理状态提示
-                const statusHintId = `status-hint-${index}`;
-                const statusHint = document.getElementById(statusHintId);
+                // 清理状态提示（使用之前已声明的statusHint变量）
                 if (statusHint && statusHint.parentNode) {
                     statusHint.remove();
                 }
@@ -672,11 +690,10 @@ async function downloadEpisodeFile(audioUrl, title, index) {
             buttons[index].textContent = originalText;
             buttons[index].disabled = false;
             
-            // 清理状态提示
-            const statusHintId = `status-hint-${index}`;
-            const statusHint = document.getElementById(statusHintId);
-            if (statusHint && statusHint.parentNode) {
-                statusHint.remove();
+            // 清理状态提示（在catch块中需要重新获取，因为statusHint可能不在作用域内）
+            const errorStatusHint = document.getElementById(`status-hint-${index}`);
+            if (errorStatusHint && errorStatusHint.parentNode) {
+                errorStatusHint.remove();
             }
         }
     }
@@ -917,10 +934,4 @@ async function deleteDownload(fileId) {
     }
 }
 
-// 定期刷新任务列表
-setInterval(() => {
-    if (document.getElementById('tasks-page').classList.contains('active')) {
-        loadTasks();
-    }
-}, 5000);
 
