@@ -31,7 +31,7 @@ class DownloadManager:
         """生成文件ID"""
         return hashlib.md5(url.encode()).hexdigest()
     
-    def download_file(self, url, filename=None, episode_info=None):
+    def download_file(self, url, filename=None, episode_info=None, username=None):
         """
         下载文件
         返回: (success, file_id, file_path)
@@ -70,7 +70,8 @@ class DownloadManager:
                 'file_path': file_path,
                 'downloaded_at': datetime.now().isoformat(),
                 'size': os.path.getsize(file_path),
-                'episode_info': episode_info or {}
+                'episode_info': episode_info or {},
+                'username': username or 'unknown'  # 添加用户信息
             }
             self._save_metadata()
             
@@ -79,15 +80,23 @@ class DownloadManager:
             print(f"下载失败: {e}")
             return False, None, None
     
-    def list_downloads(self):
-        """列出所有已下载的文件"""
+    def list_downloads(self, username=None):
+        """
+        列出已下载的文件
+        username: 可选，如果提供则只返回该用户的下载
+        """
         downloads = []
         for file_id, info in self.metadata.items():
             if os.path.exists(info['file_path']):
+                # 如果指定了用户名，只返回该用户的下载
+                if username and info.get('username') != username:
+                    continue
                 downloads.append({
                     'file_id': file_id,
                     **info
                 })
+        # 按下载时间倒序排列
+        downloads.sort(key=lambda x: x.get('downloaded_at', ''), reverse=True)
         return downloads
     
     def delete_file(self, file_id):
@@ -106,4 +115,28 @@ class DownloadManager:
             
             return True
         return False
+    
+    def delete_files_batch(self, file_ids):
+        """
+        批量删除文件
+        返回: (成功数量, 失败的文件ID列表)
+        """
+        success_count = 0
+        failed_ids = []
+        
+        for file_id in file_ids:
+            if self.delete_file(file_id):
+                success_count += 1
+            else:
+                failed_ids.append(file_id)
+        
+        return success_count, failed_ids
+    
+    def get_users(self):
+        """获取所有用户列表"""
+        users = set()
+        for info in self.metadata.values():
+            username = info.get('username', 'unknown')
+            users.add(username)
+        return sorted(list(users))
 

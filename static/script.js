@@ -844,42 +844,273 @@ async function cancelTask(taskId) {
 }
 
 // 加载下载列表
-async function loadDownloads() {
+let selectedDownloads = new Set(); // 存储选中的文件ID
+let currentDownloadUser = ''; // 当前筛选的用户
+
+async function loadDownloads(username = '') {
     try {
-        const response = await fetch(apiUrl('/api/downloads'));
+        currentDownloadUser = username;
+        const url = username ? apiUrl(`/api/downloads?username=${encodeURIComponent(username)}`) : apiUrl('/api/downloads');
+        const response = await fetch(url);
         const data = await response.json();
         
         if (response.ok) {
             const listDiv = document.getElementById('downloads-list');
+            
+            // 构建用户过滤器和批量操作工具栏
+            const toolbar = `
+                <div class="downloads-toolbar">
+                    <div class="filter-group">
+                        <label for="user-filter">用户筛选：</label>
+                        <select id="user-filter" onchange="filterByUser(this.value)">
+                            <option value="">全部用户</option>
+                            ${data.users.map(user => 
+                                `<option value="${user}" ${user === username ? 'selected' : ''}>${user}</option>`
+                            ).join('')}
+                        </select>
+                        <span style="margin-left: 15px; color: #666;">共 ${data.downloads.length} 个文件</span>
+                    </div>
+                    <div class="batch-actions" style="display: none;">
+                        <span id="selected-count">已选择 0 项</span>
+                        <button onclick="batchDownload()" class="download-btn" style="padding: 8px 16px; font-size: 14px;">批量下载</button>
+                        <button onclick="batchConvert()" class="monitor-btn" style="padding: 8px 16px; font-size: 14px;">批量转MP3</button>
+                        <button onclick="batchDelete()" class="delete-btn" style="padding: 8px 16px; font-size: 14px;">批量删除</button>
+                        <button onclick="clearSelection()" style="padding: 8px 16px; font-size: 14px;">取消选择</button>
+                    </div>
+                </div>
+            `;
+            
             if (data.downloads.length === 0) {
-                listDiv.innerHTML = '<p>暂无下载文件</p>';
+                listDiv.innerHTML = toolbar + '<p style="margin-top: 20px;">暂无下载文件</p>';
             } else {
-                listDiv.innerHTML = data.downloads.map(download => {
+                const downloadsList = data.downloads.map((download, index) => {
                     const size = (download.size / 1024 / 1024).toFixed(2);
                     const episodeInfo = download.episode_info || {};
                     const fileExt = download.filename.split('.').pop().toLowerCase();
                     const isM4A = fileExt === 'm4a';
+                    const username = download.username || 'unknown';
+                    const isChecked = selectedDownloads.has(download.file_id);
+                    
+                    // 构建详情内容（包括描述和封面）
+                    const hasDetails = (episodeInfo.description && episodeInfo.description.trim()) || episodeInfo.cover;
+                    let detailsContent = '';
+                    
+                    if (hasDetails) {
+                        if (episodeInfo.cover) {
+                            detailsContent += `<img src="${episodeInfo.cover}" alt="封面" class="episode-detail-cover" onerror="this.style.display='none'">`;
+                        }
+                        if (episodeInfo.description) {
+                            detailsContent += `<p class="episode-description">${episodeInfo.description}</p>`;
+                        }
+                    }
+                    
                     return `
-                        <div class="download-item">
+                        <div class="download-item ${isChecked ? 'selected' : ''}" data-file-id="${download.file_id}">
+                            <div class="download-item-checkbox">
+                                <input type="checkbox" id="check-${download.file_id}" 
+                                       ${isChecked ? 'checked' : ''}
+                                       onchange="toggleDownloadSelection('${download.file_id}')"
+                                       onclick="event.stopPropagation()">
+                            </div>
                             <div class="download-item-info">
-                                <h5>${episodeInfo.title || download.filename}</h5>
-                                <p>${episodeInfo.description || ''}</p>
-                                <p style="font-size: 12px; color: #999;">
+                                <h5>
+                                    ${episodeInfo.title || download.filename}
+                                    <span class="user-badge">${username}</span>
+                                </h5>
+                                ${episodeInfo.podcast_title ? `<p class="podcast-channel">频道: ${episodeInfo.podcast_title}</p>` : ''}
+                                <p class="file-meta">
                                     大小: ${size} MB | 格式: ${fileExt.toUpperCase()} | 下载时间: ${new Date(download.downloaded_at).toLocaleString('zh-CN')}
                                 </p>
+                                ${hasDetails ? `
+                                    <div class="details-container">
+                                        <button class="expand-btn" id="expand-btn-${download.file_id}" onclick="toggleDescription('${download.file_id}', event)">
+                                            展开详情 ▼
+                                        </button>
+                                        <div class="details-content" id="details-${download.file_id}" style="display: none;">
+                                            ${detailsContent}
+                                        </div>
+                                    </div>
+                                ` : ''}
                             </div>
-                            <div>
-                                <a href="${apiUrl('/downloads/' + download.file_id)}" download class="download-btn" style="display: inline-block; text-decoration: none; margin-right: 10px;">下载</a>
-                                ${isM4A ? `<button onclick="convertToMp3('${download.file_id}')" class="monitor-btn" style="margin-right: 10px;">转换为MP3</button>` : ''}
+                            <div class="download-item-actions">
+                                <a href="${apiUrl('/downloads/' + download.file_id)}" download class="download-btn">下载</a>
+                                ${isM4A ? `<button onclick="convertToMp3('${download.file_id}')" class="monitor-btn">转MP3</button>` : ''}
                                 <button onclick="deleteDownload('${download.file_id}')" class="delete-btn">删除</button>
                             </div>
                         </div>
                     `;
                 }).join('');
+                
+                listDiv.innerHTML = toolbar + downloadsList;
+                
+                // 更新批量操作工具栏显示
+                updateBatchToolbar();
             }
         }
     } catch (error) {
         console.error('加载下载列表失败:', error);
+    }
+}
+
+// 切换描述展开/收起
+function toggleDescription(fileId, event) {
+    event.stopPropagation();
+    const details = document.getElementById(`details-${fileId}`);
+    const btn = document.getElementById(`expand-btn-${fileId}`);
+    
+    if (!details || !btn) return;
+    
+    if (details.style.display === 'none') {
+        details.style.display = 'block';
+        btn.textContent = '收起详情 ▲';
+        btn.classList.add('expanded');
+    } else {
+        details.style.display = 'none';
+        btn.textContent = '展开详情 ▼';
+        btn.classList.remove('expanded');
+    }
+}
+
+// 按用户过滤
+function filterByUser(username) {
+    loadDownloads(username);
+}
+
+// 切换下载项选择状态
+function toggleDownloadSelection(fileId) {
+    const checkbox = document.getElementById(`check-${fileId}`);
+    const downloadItem = document.querySelector(`[data-file-id="${fileId}"]`);
+    
+    if (checkbox.checked) {
+        selectedDownloads.add(fileId);
+        downloadItem.classList.add('selected');
+    } else {
+        selectedDownloads.delete(fileId);
+        downloadItem.classList.remove('selected');
+    }
+    
+    updateBatchToolbar();
+}
+
+// 更新批量操作工具栏
+function updateBatchToolbar() {
+    const batchActions = document.querySelector('.batch-actions');
+    const selectedCount = document.getElementById('selected-count');
+    
+    if (batchActions && selectedCount) {
+        if (selectedDownloads.size > 0) {
+            batchActions.style.display = 'flex';
+            selectedCount.textContent = `已选择 ${selectedDownloads.size} 项`;
+        } else {
+            batchActions.style.display = 'none';
+        }
+    }
+}
+
+// 清除选择
+function clearSelection() {
+    selectedDownloads.clear();
+    document.querySelectorAll('.download-item-checkbox input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+    });
+    document.querySelectorAll('.download-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+    updateBatchToolbar();
+}
+
+// 批量下载
+async function batchDownload() {
+    if (selectedDownloads.size === 0) {
+        alert('请先选择要下载的文件');
+        return;
+    }
+    
+    // 依次触发下载
+    for (const fileId of selectedDownloads) {
+        const link = document.createElement('a');
+        link.href = apiUrl(`/downloads/${fileId}`);
+        link.download = '';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // 延迟一下，避免浏览器阻止多个下载
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    alert(`已触发${selectedDownloads.size}个文件的下载`);
+}
+
+// 批量转换
+async function batchConvert() {
+    if (selectedDownloads.size === 0) {
+        alert('请先选择要转换的文件');
+        return;
+    }
+    
+    if (!confirm(`确定要将选中的${selectedDownloads.size}个文件转换为MP3格式吗？`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(apiUrl('/api/audio/batch/convert'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file_ids: Array.from(selectedDownloads)
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert(data.message + `\n成功: ${data.success_count}/${data.total_count}`);
+            clearSelection();
+            loadDownloads(currentDownloadUser);
+        } else {
+            alert('批量转换失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        alert('请求失败: ' + error.message);
+    }
+}
+
+// 批量删除
+async function batchDelete() {
+    if (selectedDownloads.size === 0) {
+        alert('请先选择要删除的文件');
+        return;
+    }
+    
+    if (!confirm(`确定要删除选中的${selectedDownloads.size}个文件吗？此操作不可恢复！`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(apiUrl('/api/downloads/batch/delete'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file_ids: Array.from(selectedDownloads)
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert(data.message);
+            clearSelection();
+            loadDownloads(currentDownloadUser);
+        } else {
+            alert('批量删除失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        alert('请求失败: ' + error.message);
     }
 }
 

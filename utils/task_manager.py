@@ -29,7 +29,7 @@ class TaskManager:
             'subscriptions': subscriptions,
             'count': count,
             'progress': {
-                'total': len(subscriptions),
+                'total': len(subscriptions) * count,  # 修复：总数应该是订阅数 * 每个订阅的集数
                 'completed': 0,
                 'failed': 0
             },
@@ -89,7 +89,8 @@ class TaskManager:
                             if episode.get('audio_url'):
                                 success, file_id, file_path = self.download_manager.download_file(
                                     episode['audio_url'],
-                                    episode_info=episode
+                                    episode_info=episode,
+                                    username=task['username']
                                 )
                                 
                                 with self.lock:
@@ -106,9 +107,6 @@ class TaskManager:
                         print(f"处理订阅失败: {e}")
                         with self.lock:
                             task['progress']['failed'] += 1
-                    
-                    with self.lock:
-                        task['progress']['completed'] += 1
                 
                 with self.lock:
                     task['status'] = 'completed'
@@ -144,7 +142,8 @@ class TaskManager:
                         if episode.get('audio_url'):
                             success, file_id, file_path = self.download_manager.download_file(
                                 episode['audio_url'],
-                                episode_info=episode
+                                episode_info=episode,
+                                username=task['username']
                             )
                             
                             if success:

@@ -340,28 +340,188 @@ button:active {
     margin-top: 8px;
 }
 
+/* 下载管理工具栏 */
+.downloads-toolbar {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.filter-group label {
+    font-weight: 600;
+    color: #555;
+}
+
+.filter-group select {
+    padding: 8px 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.3s;
+}
+
+.filter-group select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.batch-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 15px;
+    border-top: 1px solid #e0e0e0;
+    flex-wrap: wrap;
+}
+
+.batch-actions span {
+    font-weight: 600;
+    color: #667eea;
+}
+
 .download-item {
     background: #f8f9fa;
     padding: 15px;
     border-radius: 8px;
     margin-bottom: 10px;
     display: flex;
-    justify-content: space-between;
+    gap: 15px;
+    align-items: flex-start;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+}
+
+.download-item.selected {
+    background: #e8f0fe;
+    border-color: #667eea;
+}
+
+.download-item-checkbox {
+    display: flex;
     align-items: center;
+    padding-top: 2px;
+}
+
+.download-item-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
 }
 
 .download-item-info {
     flex: 1;
+    min-width: 0;
 }
 
 .download-item-info h5 {
     color: #333;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.user-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #667eea;
+    color: white;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.podcast-channel {
+    color: #888;
+    font-size: 13px;
+    margin: 4px 0;
+    font-style: italic;
+}
+
+.file-meta {
+    font-size: 12px;
+    color: #999;
+    margin: 8px 0;
+}
+
+.details-container {
+    margin-top: 10px;
+}
+
+.expand-btn {
+    background: none;
+    border: none;
+    color: #667eea;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 6px 0;
+    text-decoration: underline;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+
+.expand-btn:hover {
+    color: #764ba2;
+}
+
+.details-content {
+    margin-top: 10px;
+    padding: 12px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+}
+
+.episode-detail-cover {
+    max-width: 100%;
+    max-height: 300px;
+    width: auto;
+    height: auto;
+    display: block;
+    margin: 0 auto 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    object-fit: contain;
+}
+
+.episode-description {
+    color: #666;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
 }
 
 .download-item-info p {
     color: #666;
     font-size: 13px;
+}
+
+.download-item-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 100px;
+}
+
+.download-item-actions a,
+.download-item-actions button {
+    width: 100%;
+    text-align: center;
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: nowrap;
 }
 
 .delete-btn {
@@ -528,23 +688,79 @@ button:active {
         margin: 0 auto;
     }
     
-    .download-item {
-        flex-direction: column;
-        gap: 10px;
-        align-items: stretch;
+    .downloads-toolbar {
+        padding: 12px;
     }
     
-    .download-item > div:last-child {
-        display: flex;
+    .filter-group {
         flex-direction: column;
+        align-items: stretch;
         gap: 8px;
     }
     
-    .download-item button,
-    .download-item a {
+    .filter-group select {
+        width: 100%;
+    }
+    
+    .batch-actions {
+        gap: 8px;
+        padding-top: 12px;
+    }
+    
+    .batch-actions button {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+    
+    .download-item {
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px;
+        position: relative;
+    }
+    
+    .download-item-checkbox {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+    }
+    
+    .download-item-info h5 {
+        font-size: 14px;
+        padding-right: 30px;
+    }
+    
+    .user-badge {
+        font-size: 10px;
+    }
+    
+    .podcast-channel {
+        font-size: 12px;
+    }
+    
+    .file-meta {
+        font-size: 11px;
+    }
+    
+    .episode-detail-cover {
+        max-height: 200px;
+    }
+    
+    .episode-description {
+        font-size: 12px;
+    }
+    
+    .download-item-actions {
+        flex-direction: column;
+        width: 100%;
+        min-width: auto;
+    }
+    
+    .download-item-actions a,
+    .download-item-actions button {
         width: 100%;
         text-align: center;
-        margin: 0 !important;
+        margin: 0;
     }
     
     .task-header {
