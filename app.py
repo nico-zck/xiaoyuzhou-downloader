@@ -163,6 +163,9 @@ def download_episode_file():
         response = requests.get(audio_url, headers=headers, stream=True, timeout=30)
         response.raise_for_status()
         
+        # 获取文件大小
+        content_length = response.headers.get('Content-Length')
+        
         # 确定文件扩展名
         content_type = response.headers.get('Content-Type', '')
         if 'mp3' in content_type or audio_url.endswith('.mp3'):
@@ -219,6 +222,8 @@ def download_episode_file():
                 
                 ext = 'mp3'
                 content_type = 'audio/mpeg'
+                # 对于转换后的文件，获取文件大小
+                content_length = str(os.path.getsize(temp_mp3_path)) if os.path.exists(temp_mp3_path) else None
             except Exception as e:
                 # 记录详细错误信息
                 logger.exception(f"音频转换过程发生异常 - 输入文件: {temp_m4a_path}, 异常信息: {str(e)}")
@@ -247,12 +252,19 @@ def download_episode_file():
             ascii_filename = 'episode'
         ascii_full_filename = f'{ascii_filename}.{ext}'
         
+        # 构建响应头
+        response_headers = {
+            'Content-Disposition': f'attachment; filename="{ascii_full_filename}"; filename*=UTF-8\'\'{encoded_full_filename}'
+        }
+        
+        # 如果有文件大小信息，添加到响应头
+        if content_length:
+            response_headers['Content-Length'] = content_length
+        
         return Response(
             generate(),
             mimetype=content_type or 'audio/mpeg',
-            headers={
-                'Content-Disposition': f'attachment; filename="{ascii_full_filename}"; filename*=UTF-8\'\'{encoded_full_filename}'
-            }
+            headers=response_headers
         )
     except Exception as e:
         return jsonify({'error': f'下载失败: {str(e)}'}), 500

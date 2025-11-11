@@ -84,6 +84,18 @@ async function downloadEpisode() {
     downloadBtn.textContent = '获取下载链接中...';
     downloadBtn.disabled = true;
     
+    // 创建状态提示元素
+    let statusHint = document.getElementById('download-status-hint');
+    if (!statusHint) {
+        statusHint = document.createElement('div');
+        statusHint.id = 'download-status-hint';
+        statusHint.style.marginTop = '10px';
+        statusHint.style.fontSize = '14px';
+        statusHint.style.color = '#666';
+        statusHint.style.fontStyle = 'italic';
+        downloadBtn.parentNode.insertBefore(statusHint, downloadBtn.nextSibling);
+    }
+    
     try {
         // 首先获取下载链接和节目标题
         const response = await fetch(apiUrl('/api/episode/download-url'), {
@@ -101,11 +113,17 @@ async function downloadEpisode() {
             const title = document.getElementById('episode-title').textContent || 'episode';
             const safeTitle = title.replace(/[<>:"/\\|?*]/g, '_').trim();
             
-            // 通过API下载，设置正确的文件名
-            downloadBtn.textContent = '下载中...';
-            
             // 检查是否要转换
             const convertToMp3 = document.getElementById('convert-to-mp3').checked;
+            
+            // 根据是否需要转换显示不同的提示
+            if (convertToMp3) {
+                downloadBtn.textContent = '处理中，请稍候...';
+                statusHint.innerHTML = '⚙️ 正在下载原始音频并转换格式，这可能需要一些时间...';
+            } else {
+                downloadBtn.textContent = '下载中...';
+                statusHint.innerHTML = '📥 正在下载音频文件...';
+            }
             
             const downloadResponse = await fetch(apiUrl('/api/episode/download'), {
                 method: 'POST',
@@ -120,7 +138,55 @@ async function downloadEpisode() {
             });
             
             if (downloadResponse.ok) {
-                const blob = await downloadResponse.blob();
+                // 更新状态提示
+                const convertToMp3 = document.getElementById('convert-to-mp3').checked;
+                if (convertToMp3) {
+                    statusHint.innerHTML = '✅ 格式转换完成，正在下载文件...';
+                } else {
+                    statusHint.innerHTML = '📥 正在下载文件...';
+                }
+                
+                // 创建进度显示元素
+                const progressContainer = document.createElement('div');
+                progressContainer.style.marginTop = '10px';
+                progressContainer.innerHTML = `
+                    <div style="margin-bottom: 5px; font-size: 14px;">
+                        <span id="download-progress-text">下载中: 0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="download-progress-fill" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                `;
+                statusHint.parentNode.insertBefore(progressContainer, statusHint.nextSibling);
+                
+                // 使用流式下载追踪进度
+                const contentLength = downloadResponse.headers.get('Content-Length');
+                const total = contentLength ? parseInt(contentLength, 10) : 0;
+                let loaded = 0;
+                
+                const reader = downloadResponse.body.getReader();
+                const chunks = [];
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) break;
+                    
+                    chunks.push(value);
+                    loaded += value.length;
+                    
+                    // 更新进度
+                    if (total > 0) {
+                        const percent = Math.round((loaded / total) * 100);
+                        document.getElementById('download-progress-text').textContent = `下载中: ${percent}% (${(loaded / 1024 / 1024).toFixed(2)}MB / ${(total / 1024 / 1024).toFixed(2)}MB)`;
+                        document.getElementById('download-progress-fill').style.width = `${percent}%`;
+                    } else {
+                        document.getElementById('download-progress-text').textContent = `下载中: ${(loaded / 1024 / 1024).toFixed(2)}MB`;
+                    }
+                }
+                
+                // 组合所有数据块
+                const blob = new Blob(chunks);
                 const blobUrl = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = blobUrl;
@@ -157,24 +223,42 @@ async function downloadEpisode() {
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(blobUrl);
                 
-                downloadBtn.textContent = '下载完成';
+                // 显示完成状态
+                document.getElementById('download-progress-text').textContent = '下载完成！';
+                document.getElementById('download-progress-fill').style.width = '100%';
+                statusHint.innerHTML = '✅ 全部完成！';
+                
                 setTimeout(() => {
+                    progressContainer.remove();
+                    if (statusHint && statusHint.parentNode) {
+                        statusHint.remove();
+                    }
                     downloadBtn.textContent = originalText;
                     downloadBtn.disabled = false;
                 }, 2000);
             } else {
                 const errorData = await downloadResponse.json();
                 alert('下载失败: ' + (errorData.error || '未知错误'));
+                if (statusHint && statusHint.parentNode) {
+                    statusHint.remove();
+                }
                 downloadBtn.textContent = originalText;
                 downloadBtn.disabled = false;
             }
         } else {
             alert('获取下载链接失败: ' + (data.error || '未知错误'));
+            if (statusHint && statusHint.parentNode) {
+                statusHint.remove();
+            }
             downloadBtn.textContent = originalText;
             downloadBtn.disabled = false;
         }
     } catch (error) {
         alert('请求失败: ' + error.message);
+        const statusHint = document.getElementById('download-status-hint');
+        if (statusHint && statusHint.parentNode) {
+            statusHint.remove();
+        }
         downloadBtn.textContent = originalText;
         downloadBtn.disabled = false;
     }
@@ -347,8 +431,12 @@ async function loadEpisodes(subIndex) {
                             <h5>${episode.title}</h5>
                             <p>${episode.description || ''}</p>
                             ${episode.audio_url ? `
+                                <div class="convert-checkbox-container">
+                                    <input type="checkbox" id="convert-sub-${idx}" style="width: auto;">
+                                    <label for="convert-sub-${idx}">如果是m4a格式，自动转换为mp3</label>
+                                </div>
                                 <button onclick="downloadEpisodeFile('${safeAudioUrl}', '${safeTitle}', ${idx})" 
-                                        class="download-btn" style="padding: 8px 16px; font-size: 14px;">
+                                        class="download-btn" style="padding: 8px 16px; font-size: 14px; margin-top: 8px;">
                                     下载
                                 </button>
                             ` : '<span style="color: #999;">暂无下载链接</span>'}
@@ -384,11 +472,38 @@ async function downloadEpisodeFile(audioUrl, title, index) {
     }
     
     try {
+        // 获取转换选项
+        const convertCheckbox = document.getElementById(`convert-sub-${index}`);
+        const convertToMp3 = convertCheckbox ? convertCheckbox.checked : false;
+        
         // 显示下载中状态
-        const buttons = document.querySelectorAll('.episode-item button');
+        const buttons = document.querySelectorAll('.episode-item button.download-btn');
         if (buttons[index]) {
             const originalText = buttons[index].textContent;
-            buttons[index].textContent = '下载中...';
+            
+            // 创建或获取状态提示元素
+            const statusHintId = `status-hint-${index}`;
+            let statusHint = document.getElementById(statusHintId);
+            
+            if (!statusHint) {
+                statusHint = document.createElement('div');
+                statusHint.id = statusHintId;
+                statusHint.style.marginTop = '8px';
+                statusHint.style.fontSize = '13px';
+                statusHint.style.color = '#666';
+                statusHint.style.fontStyle = 'italic';
+                buttons[index].parentNode.insertBefore(statusHint, buttons[index].nextSibling);
+            }
+            
+            // 根据是否需要转换显示不同的提示
+            if (convertToMp3) {
+                buttons[index].textContent = '处理中...';
+                statusHint.innerHTML = '⚙️ 正在下载并转换格式，请稍候...';
+            } else {
+                buttons[index].textContent = '准备下载...';
+                statusHint.innerHTML = '📥 正在准备下载...';
+            }
+            
             buttons[index].disabled = true;
             
             // 通过服务器下载，设置正确的文件名
@@ -399,38 +514,170 @@ async function downloadEpisodeFile(audioUrl, title, index) {
                 },
                 body: JSON.stringify({
                     url: audioUrl,
-                    filename: title
+                    filename: title,
+                    convert_to_mp3: convertToMp3
                 })
             });
             
             if (response.ok) {
-                const blob = await response.blob();
+                // 获取转换选项并更新状态提示
+                const convertCheckbox = document.getElementById(`convert-sub-${index}`);
+                const convertToMp3 = convertCheckbox ? convertCheckbox.checked : false;
+                const statusHintId = `status-hint-${index}`;
+                const statusHint = document.getElementById(statusHintId);
+                
+                if (statusHint) {
+                    if (convertToMp3) {
+                        statusHint.innerHTML = '✅ 格式转换完成，正在下载...';
+                    } else {
+                        statusHint.innerHTML = '📥 正在下载文件...';
+                    }
+                }
+                
+                // 创建进度显示元素
+                const progressId = `progress-${index}`;
+                let progressContainer = document.getElementById(progressId);
+                
+                if (!progressContainer) {
+                    progressContainer = document.createElement('div');
+                    progressContainer.id = progressId;
+                    progressContainer.style.marginTop = '8px';
+                    progressContainer.innerHTML = `
+                        <div style="margin-bottom: 5px; font-size: 13px; color: #666;">
+                            <span id="progress-text-${index}">下载中: 0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div id="progress-fill-${index}" class="progress-fill" style="width: 0%"></div>
+                        </div>
+                    `;
+                    const insertAfter = statusHint || buttons[index];
+                    insertAfter.parentNode.insertBefore(progressContainer, insertAfter.nextSibling);
+                }
+                
+                // 使用流式下载追踪进度
+                const contentLength = response.headers.get('Content-Length');
+                const total = contentLength ? parseInt(contentLength, 10) : 0;
+                let loaded = 0;
+                
+                const reader = response.body.getReader();
+                const chunks = [];
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) break;
+                    
+                    chunks.push(value);
+                    loaded += value.length;
+                    
+                    // 更新进度
+                    const progressText = document.getElementById(`progress-text-${index}`);
+                    const progressFill = document.getElementById(`progress-fill-${index}`);
+                    
+                    if (progressText && progressFill) {
+                        if (total > 0) {
+                            const percent = Math.round((loaded / total) * 100);
+                            progressText.textContent = `下载中: ${percent}% (${(loaded / 1024 / 1024).toFixed(2)}MB / ${(total / 1024 / 1024).toFixed(2)}MB)`;
+                            progressFill.style.width = `${percent}%`;
+                        } else {
+                            progressText.textContent = `下载中: ${(loaded / 1024 / 1024).toFixed(2)}MB`;
+                        }
+                    }
+                }
+                
+                // 组合所有数据块
+                const blob = new Blob(chunks);
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${title}.mp3`; // 设置文件名
+                
+                // 从Content-Disposition header获取文件名
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = `${title}.mp3`;
+                
+                if (contentDisposition) {
+                    // 尝试解析 filename*=UTF-8''encoded_filename 格式（RFC 5987）
+                    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+                    if (utf8Match) {
+                        try {
+                            filename = decodeURIComponent(utf8Match[1]);
+                        } catch (e) {
+                            // 如果解码失败，尝试普通格式
+                            const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/);
+                            if (normalMatch) {
+                                filename = normalMatch[1];
+                            }
+                        }
+                    } else {
+                        // 尝试普通格式
+                        const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/);
+                        if (normalMatch) {
+                            filename = normalMatch[1].replace(/['"]/g, '');
+                        }
+                    }
+                }
+                
+                a.download = filename;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
                 
+                // 显示完成状态
+                const progressText = document.getElementById(`progress-text-${index}`);
+                const progressFill = document.getElementById(`progress-fill-${index}`);
+                const statusHintId = `status-hint-${index}`;
+                const statusHint = document.getElementById(statusHintId);
+                
+                if (progressText && progressFill) {
+                    progressText.textContent = '下载完成！';
+                    progressFill.style.width = '100%';
+                }
+                
+                if (statusHint) {
+                    statusHint.innerHTML = '✅ 全部完成！';
+                }
+                
                 buttons[index].textContent = '下载完成';
                 setTimeout(() => {
+                    if (progressContainer && progressContainer.parentNode) {
+                        progressContainer.remove();
+                    }
+                    if (statusHint && statusHint.parentNode) {
+                        statusHint.remove();
+                    }
                     buttons[index].textContent = originalText;
                     buttons[index].disabled = false;
                 }, 2000);
             } else {
                 const data = await response.json();
                 alert('下载失败: ' + (data.error || '未知错误'));
+                
+                // 清理状态提示
+                const statusHintId = `status-hint-${index}`;
+                const statusHint = document.getElementById(statusHintId);
+                if (statusHint && statusHint.parentNode) {
+                    statusHint.remove();
+                }
+                
                 buttons[index].textContent = originalText;
                 buttons[index].disabled = false;
             }
         }
     } catch (error) {
         alert('下载失败: ' + error.message);
-        const buttons = document.querySelectorAll('.episode-item button');
+        const buttons = document.querySelectorAll('.episode-item button.download-btn');
         if (buttons[index]) {
+            const originalText = buttons[index].getAttribute('data-original-text') || '下载';
+            buttons[index].textContent = originalText;
             buttons[index].disabled = false;
+            
+            // 清理状态提示
+            const statusHintId = `status-hint-${index}`;
+            const statusHint = document.getElementById(statusHintId);
+            if (statusHint && statusHint.parentNode) {
+                statusHint.remove();
+            }
         }
     }
 }

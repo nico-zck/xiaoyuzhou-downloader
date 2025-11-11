@@ -331,6 +331,15 @@ button:active {
     transition: width 0.3s;
 }
 
+/* 进度条容器样式优化 */
+.episode-item-content .progress-bar {
+    margin-top: 8px;
+}
+
+.episode-details .progress-bar {
+    margin-top: 8px;
+}
+
 .download-item {
     background: #f8f9fa;
     padding: 15px;
@@ -403,5 +412,194 @@ button:active {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* 移动端优化 */
+@media screen and (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+    
+    .container {
+        border-radius: 8px;
+    }
+    
+    header {
+        padding: 20px 15px;
+    }
+    
+    header h1 {
+        font-size: 1.8em;
+        margin-bottom: 15px;
+    }
+    
+    nav {
+        gap: 8px;
+    }
+    
+    .nav-btn {
+        padding: 8px 12px;
+        font-size: 14px;
+        flex: 1;
+        min-width: auto;
+    }
+    
+    .page {
+        padding: 15px;
+    }
+    
+    h2 {
+        font-size: 1.4em;
+        margin-bottom: 15px;
+    }
+    
+    h3 {
+        font-size: 1.1em;
+        margin-bottom: 12px;
+    }
+    
+    .form-group {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    
+    .form-group label {
+        min-width: auto;
+        width: 100%;
+    }
+    
+    .form-group input[type="text"],
+    .form-group input[type="number"],
+    .form-group input[type="file"] {
+        width: 100%;
+        min-width: auto;
+        font-size: 16px; /* 防止iOS自动缩放 */
+    }
+    
+    button {
+        width: 100%;
+        padding: 12px 20px;
+        font-size: 15px;
+    }
+    
+    .section {
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .episode-card {
+        flex-direction: column;
+        gap: 15px;
+        padding: 15px;
+    }
+    
+    .episode-cover {
+        width: 100%;
+        height: auto;
+        max-width: 300px;
+        margin: 0 auto;
+    }
+    
+    .episode-details h3 {
+        font-size: 1.2em;
+    }
+    
+    .episode-details p {
+        font-size: 14px;
+    }
+    
+    .subscription-item,
+    .episode-item,
+    .task-item,
+    .download-item {
+        padding: 12px;
+    }
+    
+    .episode-item {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .episode-item img {
+        width: 100%;
+        height: auto;
+        max-width: 200px;
+        margin: 0 auto;
+    }
+    
+    .download-item {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+    
+    .download-item > div:last-child {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .download-item button,
+    .download-item a {
+        width: 100%;
+        text-align: center;
+        margin: 0 !important;
+    }
+    
+    .task-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .task-header h4 {
+        font-size: 1em;
+    }
+    
+    .convert-checkbox-container {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 8px !important;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    header h1 {
+        font-size: 1.5em;
+    }
+    
+    .nav-btn {
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+    
+    h2 {
+        font-size: 1.2em;
+    }
+    
+    h3 {
+        font-size: 1em;
+    }
+}
+
+/* 转换选项样式 */
+.convert-checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.convert-checkbox-container input[type="checkbox"] {
+    width: auto !important;
+    min-width: auto !important;
+    margin: 0;
+}
+
+.convert-checkbox-container label {
+    margin: 0;
+    font-size: 14px;
+    cursor: pointer;
 }
 
