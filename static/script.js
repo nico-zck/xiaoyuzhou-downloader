@@ -707,6 +707,7 @@ async function downloadLatest() {
     }
     
     const count = parseInt(document.getElementById('latest-count').value) || 5;
+    const convertToMp3 = document.getElementById('convert-latest-mp3')?.checked || false;
     
     try {
         const response = await fetch(apiUrl(`/api/user/${currentUsername}/download/latest`), {
@@ -714,7 +715,10 @@ async function downloadLatest() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ count })
+            body: JSON.stringify({ 
+                count,
+                convert_to_mp3: convertToMp3
+            })
         });
         
         const data = await response.json();
@@ -742,9 +746,17 @@ async function startMonitor() {
         return;
     }
     
+    const convertToMp3 = document.getElementById('convert-monitor-mp3')?.checked || false;
+    
     try {
         const response = await fetch(apiUrl(`/api/user/${currentUsername}/monitor/start`), {
-            method: 'POST'
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                convert_to_mp3: convertToMp3
+            })
         });
         
         const data = await response.json();
@@ -874,7 +886,7 @@ async function loadDownloads(username = '') {
                     <div class="batch-actions" style="display: none;">
                         <span id="selected-count">已选择 0 项</span>
                         <button onclick="batchDownload()" class="batch-btn download-btn">批量下载</button>
-                        <button onclick="batchConvert()" class="batch-btn monitor-btn">转MP3下载</button>
+                        <button onclick="batchConvert()" class="batch-btn monitor-btn">转MP3格式</button>
                         <button onclick="batchDelete()" class="batch-btn delete-btn">批量删除</button>
                         <button onclick="clearSelection()" class="batch-btn">取消选择</button>
                     </div>
@@ -935,7 +947,7 @@ async function loadDownloads(username = '') {
                             </div>
                             <div class="download-item-actions">
                                 <a href="${apiUrl('/downloads/' + download.file_id)}" download class="download-btn">下载</a>
-                                ${isM4A ? `<button onclick="convertToMp3('${download.file_id}')" class="monitor-btn">转MP3</button>` : ''}
+                                ${isM4A ? `<button onclick="convertToMp3('${download.file_id}')" class="monitor-btn">转MP3格式</button>` : ''}
                                 <button onclick="deleteDownload('${download.file_id}')" class="delete-btn">删除</button>
                             </div>
                         </div>
@@ -1058,14 +1070,14 @@ async function batchDownload() {
     alert(`已触发${selectedDownloads.size}个文件的下载`);
 }
 
-// 批量转换为MP3并下载
+// 批量转换为MP3格式
 async function batchConvert() {
     if (selectedDownloads.size === 0) {
         alert('请先选择要处理的文件');
         return;
     }
     
-    if (!confirm(`确定要处理选中的${selectedDownloads.size}个文件吗？\n\nMP3文件将直接下载，M4A文件将转换为MP3后自动下载。\n注意：转换可能需要一些时间，请耐心等待。`)) {
+    if (!confirm(`确定要将选中的${selectedDownloads.size}个文件转换为MP3格式吗？\n\n• M4A文件将被转换为MP3格式，原文件将被删除\n• MP3文件将保持不变\n• 其他格式文件会提示错误\n\n注意：转换可能需要一些时间，请耐心等待。`)) {
         return;
     }
     
@@ -1111,33 +1123,7 @@ async function batchConvert() {
                 }
             }
             
-            // 自动触发下载成功的文件
-            if (data.results) {
-                const successResults = data.results.filter(r => r.success);
-                if (successResults.length > 0) {
-                    message += `\n\n正在自动下载${successResults.length}个MP3文件...`;
-                    alert(message);
-                    
-                    // 直接自动下载，不再询问
-                    for (const result of successResults) {
-                        const fileId = result.new_file_id || result.file_id;
-                        const link = document.createElement('a');
-                        link.href = apiUrl(`/downloads/${fileId}`);
-                        link.download = '';
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        
-                        // 延迟避免浏览器阻止
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                } else {
-                    // 全部失败才显示alert
-                    alert(message);
-                }
-            } else {
-                alert(message);
-            }
+            alert(message);
             
             // 刷新列表并清除选择
             await loadDownloads(currentDownloadUser);
@@ -1203,7 +1189,7 @@ async function batchDelete() {
 
 // 转换为MP3
 async function convertToMp3(fileId) {
-    if (!confirm('确定要将此m4a文件转换为mp3格式吗？转换可能需要一些时间。')) {
+    if (!confirm('确定要将此M4A文件转换为MP3格式吗？\n\n转换后原文件将被删除，只保留MP3文件。\n转换可能需要一些时间，请耐心等待。')) {
         return;
     }
     
@@ -1219,7 +1205,7 @@ async function convertToMp3(fileId) {
         const data = await response.json();
         
         if (response.ok) {
-            alert('转换成功！mp3文件已添加到下载列表。');
+            alert('转换成功！原M4A文件已被MP3文件替换。');
             loadDownloads();
         } else {
             alert('转换失败: ' + (data.error || '未知错误'));

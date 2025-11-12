@@ -45,7 +45,8 @@ def convert_m4a_to_mp3(input_path, output_path=None, quality=5, threads=8):
             check_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding='utf-8',
+            errors='ignore',  # 忽略无法解码的字符
             timeout=5
         )
         
@@ -128,7 +129,8 @@ def convert_m4a_to_mp3(input_path, output_path=None, quality=5, threads=8):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding='utf-8',
+            errors='ignore',  # 忽略无法解码的字符
             timeout=3600  # 1小时超时
         )
         
@@ -159,7 +161,8 @@ def convert_m4a_to_mp3(input_path, output_path=None, quality=5, threads=8):
                     cmd_mp3,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding='utf-8',
+                    errors='ignore',  # 忽略无法解码的字符
                     timeout=3600
                 )
                 

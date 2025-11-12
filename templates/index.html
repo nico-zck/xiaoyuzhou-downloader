@@ -83,10 +83,18 @@
                 <div class="form-group">
                     <label>下载最新N集：</label>
                     <input type="number" id="latest-count" value="5" min="1" max="50">
+                    <label style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+                        <input type="checkbox" id="convert-latest-mp3" style="width: auto;">
+                        <span>自动转换为MP3（下载后立即转换，删除原始文件）</span>
+                    </label>
                     <button onclick="downloadLatest()">开始下载</button>
                 </div>
                 <div class="form-group">
                     <button onclick="startMonitor()" class="monitor-btn">启动监听任务</button>
+                    <label style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+                        <input type="checkbox" id="convert-monitor-mp3" style="width: auto;">
+                        <span>监听任务自动转换为MP3</span>
+                    </label>
                     <p class="help-text">监听任务会自动检测新节目并下载</p>
                 </div>
             </div>

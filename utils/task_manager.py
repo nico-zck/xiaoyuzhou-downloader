@@ -4,9 +4,14 @@
 import threading
 import time
 import uuid
+import os
+import logging
 from datetime import datetime
 from utils.rss_parser import get_episodes_from_rss, check_rss_update
 from utils.download_manager import DownloadManager
+from utils.audio_converter import convert_m4a_to_mp3, get_audio_format, check_ffmpeg
+
+logger = logging.getLogger(__name__)
 
 class TaskManager:
     def __init__(self, download_manager):
@@ -16,7 +21,7 @@ class TaskManager:
         self.thread = None
         self.lock = threading.Lock()
     
-    def create_download_latest_task(self, username, subscriptions, count):
+    def create_download_latest_task(self, username, subscriptions, count, convert_to_mp3=False):
         """创建下载最新N集任务"""
         task_id = str(uuid.uuid4())
         
@@ -28,6 +33,7 @@ class TaskManager:
             'created_at': datetime.now().isoformat(),
             'subscriptions': subscriptions,
             'count': count,
+            'convert_to_mp3': convert_to_mp3,
             'progress': {
                 'total': len(subscriptions) * count,  # 修复：总数应该是订阅数 * 每个订阅的集数
                 'completed': 0,
@@ -44,7 +50,7 @@ class TaskManager:
         
         return task_id
     
-    def create_monitor_task(self, username, subscriptions):
+    def create_monitor_task(self, username, subscriptions, convert_to_mp3=False):
         """创建监听任务"""
         task_id = str(uuid.uuid4())
         
@@ -56,6 +62,7 @@ class TaskManager:
             'created_at': datetime.now().isoformat(),
             'last_check': datetime.now().isoformat(),
             'subscriptions': subscriptions,
+            'convert_to_mp3': convert_to_mp3,
             'downloaded_count': 0,
             'last_episode_times': {}  # 记录每个订阅的最后节目时间
         }
@@ -92,6 +99,10 @@ class TaskManager:
                                     episode_info=episode,
                                     username=task['username']
                                 )
+                                
+                                # 如果需要转换且下载成功
+                                if success and task.get('convert_to_mp3', False):
+                                    self._convert_downloaded_file(file_id, file_path)
                                 
                                 with self.lock:
                                     task['results'].append({
@@ -147,6 +158,10 @@ class TaskManager:
                             )
                             
                             if success:
+                                # 如果需要转换
+                                if task.get('convert_to_mp3', False):
+                                    self._convert_downloaded_file(file_id, file_path)
+                                
                                 with self.lock:
                                     task['downloaded_count'] += 1
                                     if episode.get('published'):
@@ -198,4 +213,62 @@ class TaskManager:
                     task['status'] = 'cancelled'
                     return True
         return False
+    
+    def _convert_downloaded_file(self, file_id, file_path):
+        """转换下载的文件为MP3并删除原文件"""
+        try:
+            if not file_path or not os.path.exists(file_path):
+                logger.warning(f"文件不存在，无法转换: {file_path}")
+                return
+            
+            audio_format = get_audio_format(file_path)
+            
+            # 如果已经是MP3，不需要转换
+            if audio_format == 'mp3':
+                logger.info(f"文件已经是MP3格式: {file_path}")
+                return
+            
+            # 如果不是M4A，不转换
+            if audio_format != 'm4a':
+                logger.info(f"文件格式为{audio_format}，只转换M4A格式: {file_path}")
+                return
+            
+            # 检查ffmpeg
+            if not check_ffmpeg():
+                logger.warning("ffmpeg未安装，无法转换格式")
+                return
+            
+            # 生成输出路径
+            base_name = os.path.splitext(file_path)[0]
+            output_path = f"{base_name}.mp3"
+            
+            # 执行转换
+            logger.info(f"开始转换音频文件 - 输入: {file_path}, 输出: {output_path}")
+            success, converted_path, error = convert_m4a_to_mp3(file_path, output_path)
+            
+            if success:
+                # 删除原始文件
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        logger.info(f"已删除原始文件: {file_path}")
+                except Exception as e:
+                    logger.warning(f"删除原始文件失败: {file_path}, 错误: {str(e)}")
+                
+                # 更新元数据（保持原file_id，替换文件信息）
+                new_filename = os.path.basename(converted_path)
+                file_info = self.download_manager.metadata.get(file_id)
+                if file_info:
+                    self.download_manager.metadata[file_id]['filename'] = new_filename
+                    self.download_manager.metadata[file_id]['file_path'] = converted_path
+                    self.download_manager.metadata[file_id]['size'] = os.path.getsize(converted_path)
+                    self.download_manager.metadata[file_id]['downloaded_at'] = datetime.now().isoformat()
+                    self.download_manager._save_metadata()
+                    logger.info(f"音频转换成功并替换原文件 - 文件ID: {file_id}, 输出文件: {converted_path}")
+                else:
+                    logger.warning(f"未找到文件元数据: {file_id}")
+            else:
+                logger.error(f"音频转换失败 - 文件ID: {file_id}, 输入文件: {file_path}, 错误信息: {error}")
+        except Exception as e:
+            logger.exception(f"转换下载文件时发生异常 - 文件ID: {file_id}, 文件路径: {file_path}, 异常信息: {str(e)}")
 

@@ -400,8 +400,9 @@ def get_subscription_episodes(username, sub_id):
 @app.route('/api/user/<username>/download/latest', methods=['POST'])
 def download_latest(username):
     """下载最新N集节目"""
-    data = request.json
+    data = request.json or {}
     count = int(data.get('count', 5))
+    convert_to_mp3 = data.get('convert_to_mp3', False)
     
     user_file = os.path.join(app.config['USERS_FOLDER'], f'{username}.json')
     if not os.path.exists(user_file):
@@ -412,7 +413,7 @@ def download_latest(username):
     
     subscriptions = user_data.get('subscriptions', [])
     
-    task_id = task_manager.create_download_latest_task(username, subscriptions, count)
+    task_id = task_manager.create_download_latest_task(username, subscriptions, count, convert_to_mp3)
     
     return jsonify({
         'message': '下载任务已创建',
@@ -422,6 +423,9 @@ def download_latest(username):
 @app.route('/api/user/<username>/monitor/start', methods=['POST'])
 def start_monitor(username):
     """启动监听任务"""
+    data = request.json or {}
+    convert_to_mp3 = data.get('convert_to_mp3', False)
+    
     user_file = os.path.join(app.config['USERS_FOLDER'], f'{username}.json')
     if not os.path.exists(user_file):
         return jsonify({'error': '用户不存在'}), 404
@@ -431,7 +435,7 @@ def start_monitor(username):
     
     subscriptions = user_data.get('subscriptions', [])
     
-    task_id = task_manager.create_monitor_task(username, subscriptions)
+    task_id = task_manager.create_monitor_task(username, subscriptions, convert_to_mp3)
     
     return jsonify({
         'message': '监听任务已启动',
@@ -551,25 +555,26 @@ def convert_audio():
     success, converted_path, error = convert_m4a_to_mp3(file_path, output_path)
     
     if success:
-        # 更新元数据
-        new_file_id = download_manager._get_file_id(file_info['url'] + '_mp3')
-        new_filename = os.path.splitext(file_info['filename'])[0] + '.mp3'
+        # 删除原始文件
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"已删除原始文件: {file_path}")
+        except Exception as e:
+            logger.warning(f"删除原始文件失败: {file_path}, 错误: {str(e)}")
         
-        download_manager.metadata[new_file_id] = {
-            'url': file_info['url'],
-            'filename': new_filename,
-            'file_path': converted_path,
-            'downloaded_at': datetime.now().isoformat(),
-            'size': os.path.getsize(converted_path),
-            'episode_info': file_info.get('episode_info', {}),
-            'converted_from': file_id
-        }
+        # 更新元数据（保持原file_id，替换文件信息）
+        new_filename = os.path.basename(converted_path)
+        download_manager.metadata[file_id]['filename'] = new_filename
+        download_manager.metadata[file_id]['file_path'] = converted_path
+        download_manager.metadata[file_id]['size'] = os.path.getsize(converted_path)
+        download_manager.metadata[file_id]['downloaded_at'] = datetime.now().isoformat()
         download_manager._save_metadata()
         
-        logger.info(f"音频转换成功 - 文件ID: {file_id}, 输出文件: {converted_path}, 新文件ID: {new_file_id}")
+        logger.info(f"音频转换成功并替换原文件 - 文件ID: {file_id}, 输出文件: {converted_path}")
         return jsonify({
             'message': '转换成功',
-            'file_id': new_file_id,
+            'file_id': file_id,
             'file_path': converted_path,
             'filename': new_filename
         })
@@ -665,21 +670,24 @@ def batch_convert_audio():
                 success, converted_path, error = convert_m4a_to_mp3(file_path, output_path)
                 
                 if success:
-                    # 更新元数据
+                    # 删除原始文件
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            logger.info(f"批量转换 - 已删除原始文件: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"批量转换 - 删除原始文件失败: {file_path}, 错误: {str(e)}")
+                    
+                    # 更新元数据（保持原file_id，替换文件信息）
                     new_filename = os.path.basename(converted_path)
-                    new_file_id = download_manager._get_file_id(converted_path)
-                    download_manager.metadata[new_file_id] = {
-                        **file_info,
-                        'filename': new_filename,
-                        'file_path': converted_path,
-                        'size': os.path.getsize(converted_path),
-                        'downloaded_at': datetime.now().isoformat()
-                    }
+                    download_manager.metadata[file_id]['filename'] = new_filename
+                    download_manager.metadata[file_id]['file_path'] = converted_path
+                    download_manager.metadata[file_id]['size'] = os.path.getsize(converted_path)
+                    download_manager.metadata[file_id]['downloaded_at'] = datetime.now().isoformat()
                     download_manager._save_metadata()
                     success_count += 1
                     results.append({
                         'file_id': file_id,
-                        'new_file_id': new_file_id,
                         'success': True,
                         'filename': new_filename
                     })
