@@ -87,7 +87,11 @@ async function getEpisodeInfo() {
         
         if (response.ok) {
             document.getElementById('episode-title').textContent = data.title || '未知标题';
-            document.getElementById('episode-description').textContent = data.description || '暂无描述';
+            // 处理描述中的链接，确保在新窗口打开
+            const descElement = document.getElementById('episode-description');
+            const processedDescription = addTargetBlankToLinks(data.description || '暂无描述');
+            descElement.innerHTML = processedDescription;
+            
             document.getElementById('episode-cover').src = data.cover || '/static/default-cover.png';
             document.getElementById('episode-cover').onerror = function() {
                 this.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="%23ddd"/><text x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999">无封面</text></svg>';
@@ -450,13 +454,15 @@ async function loadEpisodes(subIndex) {
                 // 清理文件名，移除非法字符并转义单引号
                 const safeTitle = (episode.title || '未知标题').replace(/[<>:"/\\|?*]/g, '_').trim().replace(/'/g, "\\'");
                 const safeAudioUrl = (episode.audio_url || '').replace(/'/g, "\\'");
+                // 处理描述中的链接，确保在新窗口打开
+                const processedDescription = addTargetBlankToLinks(episode.description || '');
                 return `
                     <div class="episode-item">
                         <img src="${episode.cover || 'data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"80\" height=\"80\"><rect width=\"80\" height=\"80\" fill=\"%23ddd\"/></svg>'}" 
                              alt="封面" onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'80\\' height=\\'80\\'><rect width=\\'80\\' height=\\'80\\' fill=\\'%23ddd\\'/></svg>'">
                         <div class="episode-item-content">
                             <h5>${episode.title}</h5>
-                            <p>${episode.description || ''}</p>
+                            <p>${processedDescription}</p>
                             ${episode.audio_url ? `
                                 <div class="convert-checkbox-container">
                                     <input type="checkbox" id="convert-sub-${idx}" style="width: auto;">
@@ -491,10 +497,35 @@ async function loadEpisodes(subIndex) {
     }
 }
 
+// 处理HTML内容中的链接，确保在新窗口打开
+function addTargetBlankToLinks(htmlContent) {
+    if (!htmlContent) return htmlContent;
+    
+    // 使用临时DOM元素来解析HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    
+    // 给所有<a>标签添加target="_blank"和rel="noopener noreferrer"
+    const links = tempDiv.querySelectorAll('a');
+    links.forEach(link => {
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener noreferrer');
+    });
+    
+    return tempDiv.innerHTML;
+}
+
 // 下载节目文件（使用正确的文件名）
 async function downloadEpisodeFile(audioUrl, title, index) {
     if (!audioUrl) {
         alert('没有可用的下载链接');
+        return;
+    }
+    
+    // 获取当前用户
+    const currentUsername = localStorage.getItem('currentUser');
+    if (!currentUsername) {
+        alert('请先选择用户');
         return;
     }
     
@@ -533,7 +564,7 @@ async function downloadEpisodeFile(audioUrl, title, index) {
             
             buttons[index].disabled = true;
             
-            // 通过服务器下载，设置正确的文件名
+            // 通过服务器下载，设置正确的文件名，同时保存到服务器
             const response = await fetch(apiUrl('/api/episode/download'), {
                 method: 'POST',
                 headers: {
@@ -542,10 +573,47 @@ async function downloadEpisodeFile(audioUrl, title, index) {
                 body: JSON.stringify({
                     url: audioUrl,
                     filename: title,
-                    convert_to_mp3: convertToMp3
+                    convert_to_mp3: convertToMp3,
+                    save_to_server: true,
+                    username: currentUsername
                 })
             });
             
+            // 检查响应类型，如果不是预期的音频流，说明出错了
+            const contentType = response.headers.get('Content-Type');
+            
+            if (!response.ok) {
+                // 处理HTTP错误状态
+                let errorMessage = '下载失败';
+                
+                if (response.status === 504) {
+                    errorMessage = '下载超时：文件较大，服务器处理时间过长。\n\n建议：\n1. 请联系管理员增加Nginx超时配置\n2. 或者尝试不勾选"转换为MP3"直接下载原始文件';
+                } else if (response.status === 502 || response.status === 503) {
+                    errorMessage = '服务器暂时不可用，请稍后重试';
+                } else if (contentType && contentType.includes('application/json')) {
+                    try {
+                        const data = await response.json();
+                        errorMessage = '下载失败: ' + (data.error || '未知错误');
+                    } catch (e) {
+                        errorMessage = `下载失败: HTTP ${response.status}`;
+                    }
+                } else {
+                    errorMessage = `下载失败: HTTP ${response.status}`;
+                }
+                
+                alert(errorMessage);
+                
+                // 清理状态提示
+                if (statusHint && statusHint.parentNode) {
+                    statusHint.remove();
+                }
+                
+                buttons[index].textContent = originalText;
+                buttons[index].disabled = false;
+                return;
+            }
+            
+            // 成功响应，继续处理
             if (response.ok) {
                 // 更新状态提示（使用之前已声明的变量）
                 if (statusHint) {
@@ -669,21 +737,20 @@ async function downloadEpisodeFile(audioUrl, title, index) {
                     buttons[index].textContent = originalText;
                     buttons[index].disabled = false;
                 }, 2000);
-            } else {
-                const data = await response.json();
-                alert('下载失败: ' + (data.error || '未知错误'));
-                
-                // 清理状态提示（使用之前已声明的statusHint变量）
-                if (statusHint && statusHint.parentNode) {
-                    statusHint.remove();
-                }
-                
-                buttons[index].textContent = originalText;
-                buttons[index].disabled = false;
             }
         }
     } catch (error) {
-        alert('下载失败: ' + error.message);
+        // 处理网络错误或其他异常
+        let errorMessage = '下载失败: ';
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            errorMessage += '网络连接失败，请检查网络或服务器是否正常运行';
+        } else if (error.name === 'AbortError') {
+            errorMessage += '下载被取消';
+        } else {
+            errorMessage += error.message;
+        }
+        alert(errorMessage);
+        
         const buttons = document.querySelectorAll('.episode-item button.download-btn');
         if (buttons[index]) {
             const originalText = buttons[index].getAttribute('data-original-text') || '下载';
@@ -913,7 +980,9 @@ async function loadDownloads(username = '') {
                             detailsContent += `<img src="${episodeInfo.cover}" alt="封面" class="episode-detail-cover" onerror="this.style.display='none'">`;
                         }
                         if (episodeInfo.description) {
-                            detailsContent += `<p class="episode-description">${episodeInfo.description}</p>`;
+                            // 处理描述中的链接，确保在新窗口打开
+                            const processedDescription = addTargetBlankToLinks(episodeInfo.description);
+                            detailsContent += `<p class="episode-description">${processedDescription}</p>`;
                         }
                     }
                     

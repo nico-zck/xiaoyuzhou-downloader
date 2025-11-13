@@ -136,7 +136,7 @@ def get_download_url_api():
 def download_episode_file():
     """
     下载音频文件并设置正确的文件名
-    注意：此接口使用流式传输，不会创建临时文件，数据直接从源服务器流式传输到客户端
+    如果save_to_server=True，则在流式传输给客户端的同时，也保存到服务器的downloads目录
     """
     from flask import Response
     import re
@@ -147,8 +147,20 @@ def download_episode_file():
     audio_url = data.get('url', '').strip()
     filename = data.get('filename', 'episode').strip()
     convert_to_mp3 = data.get('convert_to_mp3', False)  # 是否转换为mp3
+    save_to_server = data.get('save_to_server', False)  # 是否保存到服务器
+    username = data.get('username', '').strip()  # 用户名（用于下载管理）
+    
+    # 记录请求信息
+    logger.info(f"=== 开始处理下载请求 ===")
+    logger.info(f"音频URL: {audio_url}")
+    logger.info(f"文件名: {filename}")
+    logger.info(f"转换为MP3: {convert_to_mp3}")
+    logger.info(f"保存到服务器: {save_to_server}")
+    logger.info(f"用户名: {username}")
+    logger.info(f"客户端IP: {request.remote_addr}")
     
     if not audio_url:
+        logger.warning("请求失败: 未提供音频链接")
         return jsonify({'error': '请提供音频链接'}), 400
     
     try:
@@ -157,6 +169,7 @@ def download_episode_file():
         safe_filename = safe_filename.strip()[:100]  # 限制长度
         
         # 下载文件
+        logger.info(f"开始从源服务器获取音频文件...")
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
@@ -165,6 +178,11 @@ def download_episode_file():
         
         # 获取文件大小
         content_length = response.headers.get('Content-Length')
+        if content_length:
+            size_mb = int(content_length) / 1024 / 1024
+            logger.info(f"文件大小: {size_mb:.2f} MB")
+        else:
+            logger.warning("无法获取文件大小信息")
         
         # 确定文件扩展名
         content_type = response.headers.get('Content-Type', '')
@@ -177,19 +195,53 @@ def download_episode_file():
         else:
             ext = 'mp3'  # 默认
         
+        # 准备保存到服务器的变量
+        server_file_path = None
+        server_file_handle = None
+        file_id = None
+        
+        if save_to_server:
+            # 使用download_manager生成唯一文件名并创建文件
+            logger.info(f"准备保存文件到服务器...")
+            file_id = download_manager._generate_file_id()
+            safe_server_filename = download_manager._sanitize_filename(f'{safe_filename}.{ext}')
+            server_file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], safe_server_filename)
+            
+            # 处理文件名冲突
+            base_name, file_ext = os.path.splitext(safe_server_filename)
+            counter = 1
+            while os.path.exists(server_file_path):
+                safe_server_filename = f"{base_name}_{counter}{file_ext}"
+                server_file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], safe_server_filename)
+                counter += 1
+            
+            logger.info(f"服务器保存路径: {server_file_path}")
+            server_file_handle = open(server_file_path, 'wb')
+        
         # 如果需要转换且文件是m4a格式
         if convert_to_mp3 and ext == 'm4a':
+            logger.info(f"检测到M4A格式，准备转换为MP3...")
             if not check_ffmpeg():
+                logger.error("ffmpeg未安装，无法转换格式")
+                if server_file_handle:
+                    server_file_handle.close()
+                    if os.path.exists(server_file_path):
+                        os.unlink(server_file_path)
                 return jsonify({'error': 'ffmpeg未安装，无法转换格式。请安装ffmpeg或取消转换选项。'}), 400
             
             # 创建临时文件保存m4a
+            logger.info(f"开始下载原始M4A文件到临时目录...")
             with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as temp_m4a:
                 temp_m4a_path = temp_m4a.name
                 # 下载到临时文件
+                downloaded_size = 0
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         temp_m4a.write(chunk)
+                        downloaded_size += len(chunk)
                 temp_m4a.close()
+            
+            logger.info(f"原始文件下载完成，大小: {downloaded_size / 1024 / 1024:.2f} MB")
             
             try:
                 # 转换为mp3
@@ -200,11 +252,15 @@ def download_episode_file():
                 if not success:
                     logger.error(f"音频转换失败 - 输入文件: {temp_m4a_path}, 错误信息: {error}")
                     os.unlink(temp_m4a_path)  # 清理临时文件
+                    if server_file_handle:
+                        server_file_handle.close()
+                        if os.path.exists(server_file_path):
+                            os.unlink(server_file_path)
                     return jsonify({'error': f'转换失败: {error}'}), 500
                 
                 logger.info(f"音频转换成功: {output_path}")
                 
-                # 读取转换后的mp3文件并流式传输
+                # 读取转换后的mp3文件并流式传输（同时保存到服务器）
                 def generate():
                     try:
                         with open(temp_mp3_path, 'rb') as f:
@@ -212,8 +268,31 @@ def download_episode_file():
                                 chunk = f.read(8192)
                                 if not chunk:
                                     break
+                                # 如果需要保存到服务器
+                                if server_file_handle:
+                                    server_file_handle.write(chunk)
                                 yield chunk
                     finally:
+                        # 关闭服务器文件
+                        if server_file_handle:
+                            server_file_handle.close()
+                            # 保存元数据
+                            if save_to_server and os.path.exists(server_file_path):
+                                download_manager.metadata[file_id] = {
+                                    'file_id': file_id,
+                                    'filename': os.path.basename(server_file_path),
+                                    'file_path': server_file_path,
+                                    'size': os.path.getsize(server_file_path),
+                                    'downloaded_at': datetime.now().isoformat(),
+                                    'username': username,
+                                    'episode_info': {
+                                        'title': filename,
+                                        'audio_url': audio_url
+                                    }
+                                }
+                                download_manager._save_metadata()
+                                logger.info(f"文件已保存到服务器: {server_file_path}, 文件ID: {file_id}")
+                        
                         # 清理临时文件
                         if os.path.exists(temp_m4a_path):
                             os.unlink(temp_m4a_path)
@@ -232,13 +311,45 @@ def download_episode_file():
                     os.unlink(temp_m4a_path)
                 if 'temp_mp3_path' in locals() and os.path.exists(temp_mp3_path):
                     os.unlink(temp_mp3_path)
+                if server_file_handle:
+                    server_file_handle.close()
+                    if server_file_path and os.path.exists(server_file_path):
+                        os.unlink(server_file_path)
                 return jsonify({'error': f'转换过程出错: {str(e)}'}), 500
         else:
-            # 直接流式传输，不创建临时文件
+            # 直接流式传输（同时保存到服务器）
+            logger.info(f"开始流式传输文件（格式: {ext.upper()}）...")
             def generate():
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        yield chunk
+                try:
+                    streamed_size = 0
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            # 如果需要保存到服务器
+                            if server_file_handle:
+                                server_file_handle.write(chunk)
+                            streamed_size += len(chunk)
+                            yield chunk
+                    logger.info(f"流式传输完成，总大小: {streamed_size / 1024 / 1024:.2f} MB")
+                finally:
+                    # 关闭服务器文件
+                    if server_file_handle:
+                        server_file_handle.close()
+                        # 保存元数据
+                        if save_to_server and os.path.exists(server_file_path):
+                            download_manager.metadata[file_id] = {
+                                'file_id': file_id,
+                                'filename': os.path.basename(server_file_path),
+                                'file_path': server_file_path,
+                                'size': os.path.getsize(server_file_path),
+                                'downloaded_at': datetime.now().isoformat(),
+                                'username': username,
+                                'episode_info': {
+                                    'title': filename,
+                                    'audio_url': audio_url
+                                }
+                            }
+                            download_manager._save_metadata()
+                            logger.info(f"文件已保存到服务器: {server_file_path}, 文件ID: {file_id}")
         
         # 使用RFC 5987格式支持中文文件名
         # HTTP头必须使用latin-1编码，所以filename部分只使用ASCII字符
@@ -261,12 +372,16 @@ def download_episode_file():
         if content_length:
             response_headers['Content-Length'] = content_length
         
+        logger.info(f"准备返回响应 - 文件名: {full_filename}, Content-Type: {content_type or 'audio/mpeg'}")
+        logger.info(f"=== 下载请求处理完成，开始流式传输 ===")
+        
         return Response(
             generate(),
             mimetype=content_type or 'audio/mpeg',
             headers=response_headers
         )
     except Exception as e:
+        logger.exception(f"下载处理异常: {str(e)}")
         return jsonify({'error': f'下载失败: {str(e)}'}), 500
 
 @app.route('/api/user/create', methods=['POST'])
