@@ -12,6 +12,27 @@ function apiUrl(path) {
     return APPLICATION_ROOT + path;
 }
 
+// 用户状态管理函数
+function getCurrentUser() {
+    // 优先从全局变量获取，如果没有则从localStorage获取
+    return currentUsername || localStorage.getItem('currentUser') || '';
+}
+
+function setCurrentUser(username) {
+    // 同时更新全局变量和localStorage，确保状态同步
+    currentUsername = username;
+    if (username) {
+        localStorage.setItem('currentUser', username);
+    } else {
+        localStorage.removeItem('currentUser');
+    }
+}
+
+function clearCurrentUser() {
+    currentUsername = '';
+    localStorage.removeItem('currentUser');
+}
+
 // 初始化页面导航
 function initNavigation() {
     document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -315,8 +336,8 @@ async function createUser() {
         const data = await response.json();
         
         if (response.ok) {
-            currentUsername = username;
-            document.getElementById('user-status').innerHTML = 
+            setCurrentUser(username);
+            document.getElementById('user-status').innerHTML =
                 `<div class="status-message success">${data.message}: ${username}</div>`;
             document.getElementById('opml-section').style.display = 'block';
             document.getElementById('download-options').style.display = 'block';
@@ -368,46 +389,48 @@ function selectUser(username) {
 async function uploadOPML() {
     const fileInput = document.getElementById('opml-file');
     const file = fileInput.files[0];
-    
+
     if (!file) {
         alert('请选择OPML文件');
         return;
     }
-    
+
+    const currentUsername = getCurrentUser();
     if (!currentUsername) {
         alert('请先创建用户');
         return;
     }
-    
+
     const formData = new FormData();
     formData.append('file', file);
-    
+
     try {
         const response = await fetch(apiUrl(`/api/user/${currentUsername}/opml`), {
             method: 'POST',
             body: formData
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
-            document.getElementById('opml-status').innerHTML = 
+            document.getElementById('opml-status').innerHTML =
                 `<div class="status-message success">OPML文件解析成功，共 ${data.subscriptions.length} 个订阅</div>`;
             loadSubscriptions();
         } else {
-            document.getElementById('opml-status').innerHTML = 
+            document.getElementById('opml-status').innerHTML =
                 `<div class="status-message error">${data.error || '上传失败'}</div>`;
         }
     } catch (error) {
-        document.getElementById('opml-status').innerHTML = 
+        document.getElementById('opml-status').innerHTML =
             `<div class="status-message error">请求失败: ${error.message}</div>`;
     }
 }
 
 // 加载订阅列表
 async function loadSubscriptions() {
+    const currentUsername = getCurrentUser();
     if (!currentUsername) return;
-    
+
     try {
         const response = await fetch(apiUrl(`/api/user/${currentUsername}/subscriptions`));
         const data = await response.json();
@@ -434,8 +457,9 @@ async function loadSubscriptions() {
 
 // 加载节目列表
 async function loadEpisodes(subIndex) {
+    const currentUsername = getCurrentUser();
     if (!currentUsername) return;
-    
+
     const listDiv = document.getElementById('subscriptions-list');
     // 显示加载状态
     listDiv.innerHTML = `
@@ -444,7 +468,7 @@ async function loadEpisodes(subIndex) {
             <p>正在加载节目列表，请稍候...</p>
         </div>
     `;
-    
+
     try {
         const response = await fetch(apiUrl(`/api/user/${currentUsername}/subscriptions/${subIndex}/episodes`));
         const data = await response.json();
@@ -523,7 +547,7 @@ async function downloadEpisodeFile(audioUrl, title, index) {
     }
     
     // 获取当前用户
-    const currentUsername = localStorage.getItem('currentUser');
+    const currentUsername = getCurrentUser();
     if (!currentUsername) {
         alert('请先选择用户');
         return;
@@ -768,14 +792,15 @@ async function downloadEpisodeFile(audioUrl, title, index) {
 
 // 下载最新N集
 async function downloadLatest() {
+    const currentUsername = getCurrentUser();
     if (!currentUsername) {
         alert('请先创建用户');
         return;
     }
-    
+
     const count = parseInt(document.getElementById('latest-count').value) || 5;
     const convertToMp3 = document.getElementById('convert-latest-mp3')?.checked || false;
-    
+
     try {
         const response = await fetch(apiUrl(`/api/user/${currentUsername}/download/latest`), {
             method: 'POST',
@@ -804,17 +829,18 @@ async function downloadLatest() {
 
 // 启动监听任务
 async function startMonitor() {
+    const currentUsername = getCurrentUser();
     if (!currentUsername) {
         alert('请先创建用户');
         return;
     }
-    
+
     if (!confirm('确定要启动监听任务吗？这将自动下载所有新发布的节目。')) {
         return;
     }
-    
+
     const convertToMp3 = document.getElementById('convert-monitor-mp3')?.checked || false;
-    
+
     try {
         const response = await fetch(apiUrl(`/api/user/${currentUsername}/monitor/start`), {
             method: 'POST',
