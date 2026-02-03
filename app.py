@@ -203,7 +203,7 @@ def download_episode_file():
         if save_to_server:
             # 使用download_manager生成唯一文件名并创建文件
             logger.info(f"准备保存文件到服务器...")
-            file_id = download_manager._generate_file_id()
+            file_id = download_manager._get_file_id(audio_url)
             safe_server_filename = download_manager._sanitize_filename(f'{safe_filename}.{ext}')
             server_file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], safe_server_filename)
             
